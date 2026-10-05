@@ -112,11 +112,12 @@
       branch: CONFIG.branch,
       ...(s ? { sha: s } : {}),
     });
-    let res = await fetch(API, { method: 'PUT', headers: { ...headers(token), 'Content-Type': 'application/json' }, body: body(sha) });
+    const res = await fetch(API, { method: 'PUT', headers: { ...headers(token), 'Content-Type': 'application/json' }, body: body(sha) });
     if (res.status === 409 || res.status === 422) {
-      // Boshqa qurilma oraliqda yozgan bo'lsa — eng so'nggi sha bilan qayta urinish
-      const fresh = await remoteSha(token);
-      res = await fetch(API, { method: 'PUT', headers: { ...headers(token), 'Content-Type': 'application/json' }, body: body(fresh) });
+      // Boshqa qurilma oraliqda yozgan — ustidan yozilmaydi, avval birlashtirish kerak
+      const err = new Error('Bulutdagi baza boshqa qurilmada o\'zgargan');
+      err.conflict = true;
+      throw err;
     }
     if (!res.ok) throw await apiError(res);
     return (await res.json()).content.sha;

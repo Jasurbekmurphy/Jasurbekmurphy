@@ -217,7 +217,7 @@ const state = {
   resp: { people: [], assign: {} }, // mas'ul shaxslar va ularga biriktirilgan korxonalar
   bot: { url: '', key: '' },          // davomat boti (Cloudflare Worker) manzili va kaliti
   compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list', cardGroup: {} },
-  cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
+  cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined, base: null },
 };
 
 // ---------------------------------------------------------------- Tablar
@@ -1328,8 +1328,91 @@ async function applyPayload(p) {
 
 async function saveCloudState() {
   const c = state.cloud;
-  if (!c.session || !c.remember) { await Store.del('cloud'); return; }
+  if (!c.session || !c.remember) { await Store.del('cloud'); await Store.del('cloudbase'); return; }
   await Store.set('cloud', { key: c.session.key, salt: c.session.salt, iter: c.session.iter, token: c.token, sha: c.sha, dirty: c.dirty, at: c.at });
+}
+
+// ---- Qurilmalar orasida birlashtirish (3 tomonlama: oxirgi sinxron nusxa, bu qurilma, bulut)
+// Har bo'lim alohida birlashtiriladi, shuning uchun bir qurilmadagi eski ma'lumot
+// boshqa qurilmada qo'shilgan mas'ullar, belgilar va h.k.ni o'chirib yubormaydi.
+const jeq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const byKey = (arr, k) => Object.fromEntries((arr || []).filter((x) => x && x[k] != null).map((x) => [x[k], x]));
+const dbSig = (db) => (db ? `${db.editedAt || 0}|${db.importedAt || 0}|${(db.rows || []).length}` : '');
+const botSet = (b) => !!(b && b.url);
+
+function mergeMap(b, l, r, prefer) {
+  b = b || {}; l = l || {}; r = r || {};
+  const out = {};
+  for (const k of new Set([...Object.keys(r), ...Object.keys(l)])) {
+    const lv = l[k], rv = r[k], bv = b[k];
+    let v;
+    if (jeq(lv, rv)) v = lv;
+    else if (jeq(lv, bv)) v = rv;
+    else if (jeq(rv, bv)) v = lv;
+    else if (lv === undefined) v = rv;
+    else if (rv === undefined) v = lv;
+    else v = prefer === 'local' ? lv : rv;
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+function syncBase(p) {
+  // nusxa: keyingi o'zgarishlar asosiy (base) holatga ta'sir qilmasligi uchun
+  return JSON.parse(JSON.stringify({
+    db: dbSig(p.db), tpl: byKey(p.templates, 'name'),
+    comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {},
+    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, bot: p.bot || null,
+  }));
+}
+
+function mergePayload(base, L, R, prefer) {
+  const b = base || {};
+  const l = syncBase(L), r = syncBase(R);
+  let db;
+  if (!L.db) db = R.db;
+  else if (!R.db) db = L.db;
+  else if (l.db === r.db || l.db === b.db) db = R.db;
+  else if (r.db === b.db) db = L.db;
+  else {
+    const lt = L.db.editedAt || L.db.importedAt || 0, rt = R.db.editedAt || R.db.importedAt || 0;
+    db = lt > rt || (lt === rt && prefer === 'local') ? L.db : R.db;
+  }
+  let bot;
+  if (!botSet(L.bot)) bot = R.bot;
+  else if (!botSet(R.bot)) bot = L.bot;
+  else if (jeq(L.bot, b.bot)) bot = R.bot;
+  else if (jeq(R.bot, b.bot)) bot = L.bot;
+  else bot = prefer === 'local' ? L.bot : R.bot;
+  const people = mergeMap(b.people, l.people, r.people, prefer);
+  const assign = mergeMap(b.assign, l.assign, r.assign, prefer);
+  for (const k of Object.keys(assign)) if (!people[assign[k]]) delete assign[k];
+  return {
+    ...R, v: 1, savedAt: Date.now(), token: R.token || L.token, db, bot: bot || L.bot || R.bot,
+    templates: Object.values(mergeMap(b.tpl, l.tpl, r.tpl, prefer)),
+    marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer) },
+    resp: { ...(R.resp || {}), people: Object.values(people), assign },
+  };
+}
+
+async function setSyncBase(p) {
+  state.cloud.base = syncBase(p);
+  if (state.cloud.remember) await Store.set('cloudbase', state.cloud.base).catch(() => {});
+}
+
+// Bulutdagi nusxani olib, shu qurilmadagi bilan birlashtiradi.
+// Natija bulutdagidan farq qilsa true qaytaradi (demak, yuborish kerak).
+async function cloudMergeRemote(prefer) {
+  const c = state.cloud;
+  const remote = await Sync.fetchRemote(c.token);
+  if (!remote) { c.sha = null; return true; }
+  const opened = await Sync.open(remote.text, null, c.session.key);
+  const R = opened.payload;
+  const M = state.db ? mergePayload(c.base, cloudPayload(), R, prefer) : R;
+  await applyPayload(M);
+  c.sha = remote.sha;
+  await setSyncBase(R);
+  return !jeq(syncBase(M), syncBase(R));
 }
 
 let pushing = null;
@@ -1342,8 +1425,21 @@ async function cloudPush() {
     try {
       c.status = 'Yuborilmoqda…';
       renderCloud();
-      const text = await Sync.seal(c.session, cloudPayload());
-      c.sha = await Sync.putRemote(c.token, text, c.sha);
+      for (let attempt = 0; ; attempt++) {
+        const payload = cloudPayload();
+        const text = await Sync.seal(c.session, payload);
+        try {
+          c.sha = await Sync.putRemote(c.token, text, c.sha);
+          await setSyncBase(payload);
+          break;
+        } catch (e) {
+          if (!e.conflict || attempt >= 3) throw e;
+          // Boshqa qurilma oraliqda yozgan: uning o'zgarishlarini qo'shib, qayta yuborish
+          const need = await cloudMergeRemote('local');
+          onDbChanged();
+          if (!need) break;
+        }
+      }
       c.dirty = false;
       c.at = Date.now();
       c.status = '';
@@ -1363,7 +1459,7 @@ async function cloudPush() {
 
 async function cloudPull(manual) {
   const c = state.cloud;
-  if (!c.session) return;
+  if (!c.session || pushing) return;
   try {
     const remote = await Sync.fetchRemote(c.token);
     if (!remote) { if (manual) toast('Bulutda baza topilmadi', 'err'); return; }
@@ -1379,16 +1475,31 @@ async function cloudPull(manual) {
       toast('Bulutdagi baza kodi o\'zgargan. Yangi kodni kiriting.', 'err');
       return;
     }
-    await applyPayload(opened.payload);
+    if (pushing) return;
+    const R = opened.payload;
+    const M = state.db ? mergePayload(c.base, cloudPayload(), R, c.dirty ? 'local' : 'remote') : R;
+    await applyPayload(M);
     c.sha = remote.sha;
     c.at = Date.now();
+    await setSyncBase(R);
+    const need = !jeq(syncBase(M), syncBase(R));
+    if (need) c.dirty = true;
     await saveCloudState();
     onDbChanged();
     toast('Baza bulutdan yangilandi ☁️ ✓', 'ok');
+    if (need) cloudPush(); // bu qurilmadagi bulutda yo'q ma'lumotlar ham yuboriladi
   } catch (e) {
     if (manual) toast(e.message, 'err');
   }
 }
+
+// Boshqa qurilmalardagi o'zgarishlar: sahifaga qaytilganda va har 3 daqiqada tekshiriladi
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.cloud.session && !state.cloud.dirty) cloudPull(false);
+});
+setInterval(() => {
+  if (!document.hidden && state.cloud.session && !state.cloud.dirty) cloudPull(false);
+}, 180000);
 
 async function cloudOpen(code, remember) {
   const c = state.cloud;
@@ -1401,6 +1512,7 @@ async function cloudOpen(code, remember) {
   c.at = Date.now();
   c.dirty = false;
   await applyPayload(payload);
+  await setSyncBase(payload);
   await saveCloudState();
   onDbChanged();
   toast('Baza ochildi ✓', 'ok');
@@ -1588,6 +1700,7 @@ async function init() {
     const saved = await Store.get('cloud');
     if (saved && saved.key) {
       Object.assign(state.cloud, { session: { key: saved.key, salt: saved.salt, iter: saved.iter }, token: saved.token, sha: saved.sha, dirty: !!saved.dirty, at: saved.at, remember: true });
+      state.cloud.base = (await Store.get('cloudbase')) || null;
     }
   } catch (e) {
     toast('Brauzer xotirasiga kirib bo\'lmadi', 'err');
