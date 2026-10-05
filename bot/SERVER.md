@@ -6,6 +6,20 @@ Quyidagi buyruqlar **Ubuntu / Debian** uchun (root yoki `sudo` bilan).
 
 > Cloudflare yo'riqnomasi ([README.md](README.md)) kerak emas — bu uning o'rnini bosadi.
 
+## ⚡ Eng oson yo'l — bitta buyruq
+
+Serverga SSH orqali kiring va quyidagini bajaring:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jasurbekmurphy/Jasurbekmurphy/claude/salom-qudvc3/bot/install.sh -o install.sh && sudo bash install.sh
+```
+
+Skript bot tokenini so'raydi va qolgan hammasini (Node.js, bot, avtomatik ishga tushish,
+HTTPS, firewall) o'zi sozlaydi. Oxirida saytga kiritiladigan **manzil** va **kalit**ni chiqaradi.
+Botni yangilash uchun ham shu buyruqni qayta bajaring.
+
+Quyida — xuddi shu ishlarni qo'lda bajarish.
+
 ## 1. Node.js 22 o'rnatish
 
 ```bash
