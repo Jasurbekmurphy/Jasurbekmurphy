@@ -219,6 +219,21 @@ const state = {
 function showTab(id) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.panel').forEach((p) => (p.hidden = p.id !== id));
+  const t = document.querySelector(`.tab[data-tab="${id}"]`);
+  if (t) {
+    $('#page-title').textContent = t.dataset.title;
+    $('#page-sub').textContent = t.dataset.sub;
+    document.title = t.dataset.title + ' · Jadval Baza';
+  }
+  // Tahrirlash bo'limidagi o'zgarishlardan keyin boshqa bo'limlarni yangilash
+  if (state.stale && id !== 'p-edit') {
+    state.stale = false;
+    renderDashboard();
+    renderCompanies();
+    if (state.table) renderTable();
+    if (state.tpl) renderTemplate();
+  }
+  window.scrollTo(0, 0);
   try { localStorage.setItem('tab', id); } catch (e) { /* ixtiyoriy */ }
 }
 
@@ -226,20 +241,35 @@ function showTab(id) {
 function renderDbStatus() {
   const box = $('#db-status');
   const db = state.db;
+  const merge = $('#act-merge'), repl = $('#act-replace');
   if (!db) {
-    box.innerHTML = `<p class="muted">Baza hali bo'sh. Asosiy Excel jadvalni yuklang.</p>`;
+    box.innerHTML = `<div class="box db-card"><span class="db-ico">🗂️</span><div><h3>Baza hali bo'sh</h3>
+      <p class="muted small" style="margin:0">Asosiy Excel jadvalni yuklang (faylni pastdagi maydonga tashlashingiz ham mumkin) yoki bulutdagi bazani kod bilan oching.</p></div></div>`;
     $('#db-actions').hidden = true;
+    merge.hidden = true;
+    repl.classList.add('main-action');
+    repl.querySelector('b').textContent = 'Asosiy jadvalni yuklash';
+    repl.querySelector('small').textContent = "Excel (.xlsx) fayl. Ilova sarlavhalar va o'quvchilarni o'zi topadi.";
     return;
   }
-  const d = new Date(db.importedAt);
+  merge.hidden = false;
+  repl.classList.remove('main-action');
+  repl.querySelector('b').textContent = 'Bazani yangidan joylash';
+  repl.querySelector('small').textContent = 'Baza butunlay tanlangan fayl bilan almashtiriladi.';
+  const d = new Date(db.editedAt || db.importedAt);
   box.innerHTML = `
-    <div class="stats">
-      <div><b>${db.rows.length}</b><span>yozuv</span></div>
-      <div><b>${db.fields.length}</b><span>ustun</span></div>
-    </div>
-    <p class="muted">Fayl: <b>${esc(db.fileName)}</b> · varaq: <b>${esc(db.sheetName)}</b><br>
-    Yangilangan: ${d.toLocaleDateString('uz')} ${d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })}<br>
-    Kalit ustun: <b>${esc(db.fields[db.keyIdx]?.label || '—')}</b></p>`;
+    <div class="box db-card">
+      <span class="db-ico">🗂️</span>
+      <div>
+        <h3>${db.rows.length} ta o'quvchi · ${db.fields.length} ta ustun</h3>
+        <div class="db-meta">
+          <span>Fayl: <b>${esc(db.fileName)}</b></span>
+          <span>Varaq: <b>${esc(db.sheetName)}</b></span>
+          <span>Oxirgi o'zgarish: <b>${d.toLocaleDateString('uz')} ${d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })}</b></span>
+          <span>Kalit: <b>${esc(db.fields[db.keyIdx]?.label || '—')}</b></span>
+        </div>
+      </div>
+    </div>`;
   $('#db-actions').hidden = false;
 }
 
@@ -247,15 +277,19 @@ function renderHeader() {
   const sub = $('#hdr-sub');
   if (!sub) return;
   const db = state.db, c = state.cloud;
-  sub.textContent = db ? `${db.rows.length} o'quvchi` + (c.session ? ' · ☁️ bulut' : '') + (c.dirty ? ' · ⚠ yuborilmagan' : '') : "Baza bo'sh";
+  sub.textContent = db ? `${db.rows.length} o'quvchi` : "Baza bo'sh";
+  const st = $('#side-status');
+  if (st) st.textContent = c.session ? (c.dirty ? '☁️ Bulut · ⚠ yuborilmagan o\'zgarish bor' : '☁️ Bulut ulangan') : '💾 Faqat shu qurilmada';
 }
 
-async function onMasterFile(file) {
+async function onMasterFile(file, mode) {
   try {
     const buf = await readFile(file);
     const parsed = parseMaster(buf);
-    state.pending = { ...parsed, fileName: file.name, file: buf };
+    state.pending = { ...parsed, fileName: file.name, file: buf, mode: state.db ? mode : 'replace' };
     renderPending();
+    showTab('p-db');
+    setTimeout(() => $('#db-pending').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   } catch (e) {
     console.error(e);
     toast('Faylni o\'qib bo\'lmadi: ' + e.message, 'err');
@@ -682,6 +716,7 @@ async function saveLocal() {
 function onDbChanged() {
   computeView();
   renderHeader();
+  renderDashboard();
   renderDbStatus();
   renderCompanies();
   renderEdit();
@@ -1311,11 +1346,32 @@ async function init() {
     toast(state.script === 'lat' ? "Lotin yozuvi (korxona nomlari o'zgarmaydi)" : state.script === 'cyr' ? "Кирилл ёзуви (korxona nomlari o'zgarmaydi)" : 'Asl holatda');
   }));
   syncScriptBtns();
-  let tab = 'p-db';
+  let tab = 'p-dash';
   try { tab = localStorage.getItem('tab') || tab; } catch (e) { /* ixtiyoriy */ }
   if (!$('#' + tab)) tab = 'p-db';
 
-  $('#master-file').onchange = (e) => { if (e.target.files[0]) onMasterFile(e.target.files[0]); e.target.value = ''; };
+  $('#master-file').onchange = (e) => { if (e.target.files[0]) onMasterFile(e.target.files[0], 'replace'); e.target.value = ''; };
+  $('#merge-file').onchange = (e) => { if (e.target.files[0]) onMasterFile(e.target.files[0], 'merge'); e.target.value = ''; };
+  // Faylni sudrab tashlash
+  for (const [id, mode] of [['act-merge', 'merge'], ['act-replace', 'replace']]) {
+    const el = $('#' + id);
+    el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drag'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag'));
+    el.addEventListener('drop', (e) => {
+      e.preventDefault(); el.classList.remove('drag');
+      const f = e.dataTransfer.files[0];
+      if (f) onMasterFile(f, mode);
+    });
+  }
+  $('#db-export').onclick = async () => {
+    const db = state.view;
+    const real = db.fields.map((f, i) => (f.virtual ? -1 : i)).filter((i) => i >= 0);
+    const blob = await XlsxWrite.buildWorkbook({
+      title: '', sheetName: state.db.sheetName || 'Baza',
+      headers: real.map((i) => db.fields[i].name), rows: db.rows.map((r) => real.map((i) => r[i])),
+    });
+    downloadBlob(blob, (state.db.fileName || 'Baza').replace(/\.(xlsx|xlsm|xls)$/i, '') + ' (joriy).xlsx');
+  };
   $('#tpl-file').onchange = (e) => { if (e.target.files[0]) onTemplateFile(e.target.files[0]); e.target.value = ''; };
   $('#db-download').onclick = () => {
     const db = state.db;

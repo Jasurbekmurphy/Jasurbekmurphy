@@ -1,4 +1,4 @@
-/* global state, Store, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, downloadBlob, XlsxWrite, companyKey */
+/* global state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
 'use strict';
 // Bazani ilovaning o'zida tahrirlash, tekshiruv (JShShIR), korxona nomlarini tartiblash,
 // va yangi jadvalni bazaga birlashtirish (merge).
@@ -138,83 +138,149 @@ function mergePlan(oldDb, newDb) {
   return { db: { ...oldDb, fields, rows }, added, updatedRows, updatedCells, newFields, changes };
 }
 
-// ---------------------------------------------------------------- TAHRIRLASH paneli
-const editUi = { q: '', mode: 'all', page: 0 };
+// ---------------------------------------------------------------- TAHRIRLASH paneli (Excel'ga o'xshash jadval)
+const editUi = { q: '', mode: 'all', page: 0, cols: null, colsOpen: false };
+
+function defaultEditCols(db) {
+  const find = (...k) => db.fields.findIndex((f) => k.some((x) => Match.canon(f.name).includes(x)));
+  const cols = [db.nameIdx, find('gurux', 'guruh'), jIndex(db), find('telefon'), find('tugilgansana'), find('korxonanomi')];
+  return cols.filter((c, k, a) => c >= 0 && a.indexOf(c) === k);
+}
+
+let inlineTimer = null;
+async function afterInlineEdit() {
+  state.db.editedAt = Date.now();
+  await saveLocal();
+  computeView();
+  renderHeader();
+  state.stale = true; // boshqa bo'limlar ochilganda yangilanadi
+  renderIssueTabs();
+  clearTimeout(inlineTimer);
+  inlineTimer = setTimeout(() => cloudPush(), 2500);
+}
+
+function renderIssueTabs() {
+  const el = $('#ed-issues');
+  if (!el || !state.db) return;
+  const iss = jshshirIssues(state.db);
+  const tab = (mode, label, n, cls) => `<button class="issue-tab ${editUi.mode === mode ? 'on' : ''} ${n && cls ? cls : ''}" data-mode="${mode}">${label} <span class="n">${n}</span></button>`;
+  const sugg = companySuggestions(state.db).length;
+  el.innerHTML = tab('all', 'Hamma o\'quvchilar', state.db.rows.length) +
+    tab('bad', 'JShShIR xato', iss.bad.length, 'has-bad') +
+    tab('dup', 'Takroriy JShShIR', iss.dups.length, 'has-bad') +
+    `<button class="issue-tab ${sugg ? 'has-warn' : ''}" id="ed-comp">Korxona nomlarini tartiblash <span class="n">${sugg}</span></button>`;
+  el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { editUi.mode = b.dataset.mode; editUi.page = 0; renderEdit(); }));
+  $('#ed-comp').onclick = openCompanyDialog;
+}
 
 function renderEdit() {
   const box = $('#edit-body');
   if (!box) return;
   const db = state.db;
-  if (!db) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
+  if (!db) { box.innerHTML = '<div class="box"><p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p></div>'; return; }
+  if (!editUi.cols || editUi.cols.some((c) => c >= db.fields.length)) editUi.cols = defaultEditCols(db);
   const iss = jshshirIssues(db);
-  const sugg = companySuggestions(db);
-  const dupRows = new Set(iss.dups.flatMap((d) => d.rows));
   const badRows = new Set(iss.bad);
-  const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
-  const gi = db.fields.findIndex((f) => /gurux|guruh/.test(Match.canon(f.name)));
+  const dupRows = new Set(iss.dups.flatMap((d) => d.rows));
+  const cols = editUi.cols;
 
   let idxs = db.rows.map((_, i) => i);
   if (editUi.mode === 'bad') idxs = iss.bad;
   if (editUi.mode === 'dup') idxs = iss.dups.flatMap((d) => d.rows);
   const q = Match.norm(editUi.q), qd = Match.digits(editUi.q);
   if (q) idxs = idxs.filter((i) => db.rows[i].some((v) => v != null && (Match.norm(v).includes(q) || (qd.length >= 3 && Match.digits(v).includes(qd)))));
-  const PAGE = 40;
+  const PAGE = 50;
   const pages = Math.max(1, Math.ceil(idxs.length / PAGE));
   editUi.page = Math.min(editUi.page, pages - 1);
   const show = idxs.slice(editUi.page * PAGE, editUi.page * PAGE + PAGE);
+  const wideCols = new Set([db.nameIdx, db.fields.findIndex((f) => Match.canon(f.name).includes('korxonanomi'))]);
 
   box.innerHTML = `
-    <div class="checks">
-      <button class="check-card ${iss.bad.length ? 'bad' : 'good'} ${editUi.mode === 'bad' ? 'sel' : ''}" data-mode="bad">
-        <b>${iss.bad.length}</b><span>JShShIR xato<br><small>14 ta raqam emas</small></span></button>
-      <button class="check-card ${iss.dups.length ? 'bad' : 'good'} ${editUi.mode === 'dup' ? 'sel' : ''}" data-mode="dup">
-        <b>${iss.dups.length}</b><span>Takroriy JShShIR<br><small>dublikatlar</small></span></button>
-      <button class="check-card ${sugg.length ? 'warn' : 'good'}" id="ed-comp">
-        <b>${sugg.length}</b><span>Korxona nomi<br><small>shablonga keltirish</small></span></button>
-    </div>
-    ${iss.ji < 0 ? '<p class="warn small">Bazada JShShIR ustuni topilmadi.</p>' : ''}
-    <div class="ed-tools">
-      <input type="search" id="ed-q" placeholder="Qidirish: ism, JShShIR, telefon…" value="${esc(editUi.q)}">
-      <button class="primary" id="ed-add">＋ Yangi o'quvchi</button>
-    </div>
-    ${editUi.mode !== 'all' ? `<p class="small">Ko'rsatilmoqda: <b>${editUi.mode === 'bad' ? 'JShShIR xato bo\'lganlar' : 'takroriy JShShIR'}</b> · <button class="link" id="ed-all">hammasini ko'rsatish</button></p>` : ''}
-    <div class="ed-list">${show.map((i) => {
-      const r = db.rows[i];
-      const flags = (badRows.has(i) ? '<span class="flag bad">JShShIR xato</span>' : '') + (dupRows.has(i) ? '<span class="flag warn">dublikat</span>' : '');
-      return `<button class="ed-row" data-ri="${i}">
-        <span class="ed-name">${esc(r[nameIdx] ?? '(ismsiz)')}</span>
-        <span class="ed-meta">${gi >= 0 && r[gi] != null ? esc(r[gi]) + '-guruh · ' : ''}${iss.ji >= 0 ? esc(r[iss.ji] ?? 'JShShIR yo\'q') : ''} ${flags}</span>
-      </button>`;
-    }).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>
-    ${pages > 1 ? `<div class="pager"><button id="ed-prev" ${editUi.page ? '' : 'disabled'}>‹</button><span>${editUi.page + 1} / ${pages} (${idxs.length} ta)</span><button id="ed-next" ${editUi.page < pages - 1 ? '' : 'disabled'}>›</button></div>` : ''}
-    <div class="row-btns">
-      <button id="ed-export">Joriy bazani Excel'ga yuklab olish</button>
-    </div>
-    <p class="muted small">Tahrirlar darhol saqlanadi va bulut orqali boshqa qurilmalarga o'tadi.</p>`;
+    <div class="box">
+      <div class="ed-help">💡 <span>Kerakli <b>katakni bosing va yozing</b> — boshqa joyni bosganingizda yoki <b>Enter</b> bosganingizda avtomatik saqlanadi.
+        Qator oxiridagi <b>✎</b> o'quvchining barcha ma'lumotlarini ochadi (u yerdan o'chirish ham mumkin).</span></div>
+      <div class="issue-tabs" id="ed-issues"></div>
+      <div class="ed-bar">
+        <input type="search" id="ed-q" placeholder="Qidirish: ism, JShShIR, telefon, guruh…" value="${esc(editUi.q)}">
+        <div class="col-pick">
+          <button id="ed-cols">Ustunlar (${cols.length}) ▾</button>
+          ${editUi.colsOpen ? `<div class="col-pick-menu">${db.fields.map((f, i) => `<label><input type="checkbox" data-col="${i}" ${cols.includes(i) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}</div>` : ''}
+        </div>
+        <button class="primary" id="ed-add">＋ Yangi o'quvchi</button>
+      </div>
+      <div class="grid-wrap">
+        <table class="grid">
+          <thead><tr><th class="num">№</th>${cols.map((c) => `<th>${esc(db.fields[c].name)}</th>`).join('')}<th></th></tr></thead>
+          <tbody>${show.map((ri, k) => {
+            const r = db.rows[ri];
+            return `<tr>
+              <td class="num">${editUi.page * PAGE + k + 1}</td>
+              ${cols.map((c) => {
+                const bad = c === iss.ji && (badRows.has(ri) || dupRows.has(ri));
+                const title = c === iss.ji ? (badRows.has(ri) ? "JShShIR 14 ta raqam bo'lishi kerak" : dupRows.has(ri) ? 'Takroriy JShShIR' : '') : '';
+                return `<td><input class="cell ${wideCols.has(c) ? 'wide' : ''} ${bad ? 'bad' : ''}" data-ri="${ri}" data-fi="${c}" value="${esc(r[c] ?? '')}" ${title ? `title="${esc(title)}"` : ''} ${c === iss.ji ? 'inputmode="numeric"' : ''}></td>`;
+              }).join('')}
+              <td class="act"><button data-open="${ri}" title="Barcha ma'lumotlar">✎</button></td>
+            </tr>`;
+          }).join('') || `<tr><td colspan="${cols.length + 2}" class="muted" style="padding:16px">Hech narsa topilmadi.</td></tr>`}</tbody>
+        </table>
+      </div>
+      ${pages > 1 ? `<div class="pager"><button id="ed-prev" ${editUi.page ? '' : 'disabled'}>‹</button><span>${editUi.page + 1} / ${pages} sahifa · ${idxs.length} ta</span><button id="ed-next" ${editUi.page < pages - 1 ? '' : 'disabled'}>›</button></div>` : `<div class="pager">${idxs.length} ta</div>`}
+    </div>`;
 
+  renderIssueTabs();
   $('#ed-q').oninput = (e) => {
     editUi.q = e.target.value; editUi.page = 0;
     const pos = e.target.selectionStart;
     renderEdit();
     const inp = $('#ed-q'); inp.focus(); inp.setSelectionRange(pos, pos);
   };
-  box.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => {
-    editUi.mode = editUi.mode === b.dataset.mode ? 'all' : b.dataset.mode; editUi.page = 0; renderEdit();
+  $('#ed-cols').onclick = () => { editUi.colsOpen = !editUi.colsOpen; renderEdit(); };
+  box.querySelectorAll('[data-col]').forEach((cb) => (cb.onchange = () => {
+    const c = +cb.dataset.col;
+    editUi.cols = cb.checked ? [...editUi.cols, c].sort((a, b) => a - b) : editUi.cols.filter((x) => x !== c);
+    renderEdit();
   }));
-  const all = $('#ed-all'); if (all) all.onclick = () => { editUi.mode = 'all'; renderEdit(); };
-  $('#ed-comp').onclick = openCompanyDialog;
   $('#ed-add').onclick = () => openRecord(-1);
-  box.querySelectorAll('[data-ri]').forEach((b) => (b.onclick = () => openRecord(+b.dataset.ri)));
+  box.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => openRecord(+b.dataset.open)));
   const prev = $('#ed-prev'), next = $('#ed-next');
   if (prev) prev.onclick = () => { editUi.page--; renderEdit(); };
   if (next) next.onclick = () => { editUi.page++; renderEdit(); };
-  $('#ed-export').onclick = async () => {
-    const blob = await XlsxWrite.buildWorkbook({
-      title: '', sheetName: db.sheetName || 'Baza',
-      headers: db.fields.map((f) => f.name), rows: db.rows,
+
+  box.querySelectorAll('input.cell').forEach((inp) => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const all = [...box.querySelectorAll(`input.cell[data-fi="${inp.dataset.fi}"]`)];
+        const nxt = all[all.indexOf(inp) + 1];
+        if (nxt) nxt.focus(); else inp.blur();
+      } else if (e.key === 'Escape') {
+        inp.value = db.rows[+inp.dataset.ri][+inp.dataset.fi] ?? '';
+        inp.blur();
+      }
     });
-    downloadBlob(blob, (db.fileName || 'Baza').replace(/\.(xlsx|xlsm|xls)$/i, '') + ' (joriy).xlsx');
-  };
+    inp.addEventListener('change', async () => {
+      const ri = +inp.dataset.ri, fi = +inp.dataset.fi;
+      const row = db.rows[ri];
+      const v = parseInputValue(inp.value, row[fi]);
+      if (String(v ?? '') === String(row[fi] ?? '')) return;
+      const oldK = rowKey(db, row);
+      row[fi] = v;
+      const newK = rowKey(db, row);
+      if (oldK && newK && oldK !== newK && oldK in state.marks.stu) {
+        state.marks.stu[newK] = state.marks.stu[oldK];
+        delete state.marks.stu[oldK];
+      }
+      inp.classList.remove('saved'); void inp.offsetWidth; inp.classList.add('saved');
+      if (fi === iss.ji) {
+        const now = jshshirIssues(db);
+        const bad = now.bad.includes(ri) || now.dups.some((d) => d.rows.includes(ri));
+        inp.classList.toggle('bad', bad);
+        inp.title = bad ? "JShShIR 14 ta raqam bo'lishi kerak yoki takroriy" : '';
+      }
+      await afterInlineEdit();
+    });
+  });
 }
 
 function dialog(html) {

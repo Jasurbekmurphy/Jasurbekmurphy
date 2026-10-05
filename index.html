@@ -4,100 +4,131 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Jadval Baza</title>
-  <meta name="description" content="Excel jadvaldan ma'lumotlar bazasi: boshqa jadvallarni avtomatik to'ldirish">
-  <meta name="theme-color" content="#1f6f5c">
+  <meta name="description" content="O'quvchilar bazasi: Excel jadvallarni avtomatik to'ldirish, filtrlar, korxonalar va shartnomalar">
+  <meta name="theme-color" content="#0f3d32">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg></span>
-      <div class="brand-text"><b>Jadval Baza</b><small id="hdr-sub">Baza bo'sh</small></div>
-    </div>
-    <div class="script" role="group" aria-label="Yozuv">
-      <button data-script="orig" title="Asl holatda">Asl</button>
-      <button data-script="lat" title="Lotin yozuvi">Lotin</button>
-      <button data-script="cyr" title="Кирилл ёзуви">Кирилл</button>
-    </div>
-  </header>
-  <nav class="tabs" aria-label="Bo'limlar">
-    <button class="tab" data-tab="p-db"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.4 0 8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3V6c0-1.7 3.6-3 8-3zM4 6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span>Baza</span></button>
-    <button class="tab" data-tab="p-edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg><span>Tahrirlash</span></button>
-    <button class="tab" data-tab="p-fill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3zM14 3v4h4M9 13l2 2 4-4"/></svg><span>To'ldirish</span></button>
-    <button class="tab" data-tab="p-table"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg><span>Jadval</span></button>
-    <button class="tab" data-tab="p-comp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V7l6-3v17M10 21V9l10 3v9M3 21h18M7 10h0M7 14h0M14 15h2M14 18h2"/></svg><span>Korxonalar</span></button>
-  </nav>
-
-  <main>
-    <section class="panel" id="p-db">
-      <div class="box">
-        <h2>Asosiy jadval</h2>
-        <div id="db-status"></div>
-        <label class="file primary">
-          <input type="file" id="master-file" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-          Asosiy jadvalni yuklash / yangilash
-        </label>
-        <p class="muted small">Jadvalga o'zgartirish kiritganingizdan keyin shu yerga qayta yuklang — baza yangilanadi va nima o'zgargani ko'rsatiladi.</p>
-        <div id="db-actions" class="row-btns" hidden>
-          <button id="db-download">Asosiy jadvalni yuklab olish</button>
-          <button id="db-clear" class="danger">Bazani o'chirish</button>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <span class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg></span>
+        <div class="brand-text"><b>Jadval Baza</b><small id="hdr-sub">Baza bo'sh</small></div>
+      </div>
+      <nav class="tabs" aria-label="Bo'limlar">
+        <button class="tab" data-tab="p-dash" data-title="Dashboard" data-sub="Umumiy ko'rinish: barcha ko'rsatkichlar bir joyda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9zM14 20h6V11h-6v9zM4 20h6v-4H4v4zM14 4v4h6V4h-6z"/></svg><span class="t-long">Dashboard</span><span class="t-short">Asosiy</span></button>
+        <button class="tab" data-tab="p-db" data-title="Baza" data-sub="Asosiy jadvalni yuklash, fayl qo'shish va bulut"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.4 0 8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3V6c0-1.7 3.6-3 8-3zM4 6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span class="t-long">Baza</span><span class="t-short">Baza</span></button>
+        <button class="tab" data-tab="p-edit" data-title="Tahrirlash" data-sub="Ma'lumotlarni to'g'ridan-to'g'ri jadvalda tuzating"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg><span class="t-long">Tahrirlash</span><span class="t-short">Tahrir</span></button>
+        <button class="tab" data-tab="p-fill" data-title="Shablonni to'ldirish" data-sub="Topshiriq bilan kelgan jadvalni bazadan avtomatik to'ldirish"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3zM14 3v4h4M9 13l2 2 4-4"/></svg><span class="t-long">Shablonni to'ldirish</span><span class="t-short">To'ldirish</span></button>
+        <button class="tab" data-tab="p-table" data-title="Jadval yaratish" data-sub="Filtr va ustunlar bilan o'z jadvalingizni tuzing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg><span class="t-long">Jadval yaratish</span><span class="t-short">Jadval</span></button>
+        <button class="tab" data-tab="p-comp" data-title="Korxonalar" data-sub="Korxonalar, guruhlar va shartnomalar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V7l6-3v17M10 21V9l10 3v9M3 21h18M14 15h2M14 18h2"/></svg><span class="t-long">Korxonalar</span><span class="t-short">Korxona</span></button>
+      </nav>
+      <div class="side-foot">
+        <span class="side-cap">Yozuv</span>
+        <div class="script" role="group" aria-label="Yozuv">
+          <button data-script="orig" title="Asl holatda">Asl</button>
+          <button data-script="lat" title="Lotin yozuvi">Lotin</button>
+          <button data-script="cyr" title="Кирилл ёзуви">Кирилл</button>
         </div>
+        <div class="side-status" id="side-status"></div>
       </div>
-      <div class="box" id="db-pending" hidden></div>
-      <div class="box" id="cloud-box"></div>
-      <p class="muted small privacy">🔒 Ma'lumotlar shu qurilmada saqlanadi. Bulut yoqilgan bo'lsa, faqat kod bilan shifrlangan holda yuboriladi. Internet bo'lmasa ham ishlaydi.</p>
-    </section>
+    </aside>
 
-    <section class="panel" id="p-edit" hidden>
-      <div class="box">
-        <h2>Bazani tahrirlash</h2>
-        <p class="muted small">Imlo xatolarini tuzating, yangi o'quvchi qo'shing yoki o'chiring. Yuqoridagi kartochkalar bazadagi muammolarni ko'rsatadi, bosib ro'yxatini oching.</p>
-        <div id="edit-body"></div>
-      </div>
-    </section>
+    <div class="main">
+      <header class="topbar">
+        <span class="logo m-only"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg></span>
+        <div class="page-head">
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-sub"></p>
+        </div>
+        <div class="m-only"><div class="script" role="group" aria-label="Yozuv">
+          <button data-script="orig" title="Asl holatda">Asl</button>
+          <button data-script="lat" title="Lotin yozuvi">Lotin</button>
+          <button data-script="cyr" title="Кирилл ёзуви">Кирилл</button>
+        </div></div>
+      </header>
 
-    <section class="panel" id="p-fill" hidden>
-      <div class="box">
-        <h2>Boshqa jadvalni to'ldirish</h2>
-        <p class="muted small">Topshiriq bilan kelgan bo'sh jadvalni (.xlsx) yuklang. Ustun nomlari bo'yicha bazadan kerakli ma'lumot avtomatik qo'yiladi; faylning ko'rinishi, formatlari, boshqa varaqlari o'zgarmaydi.</p>
-        <label class="file primary">
-          <input type="file" id="tpl-file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-          Jadvalni tanlash
-        </label>
-      </div>
-      <div class="box" id="tpl-body" hidden></div>
-    </section>
+      <main>
+        <section class="panel" id="p-dash" hidden>
+          <div id="dash-body"></div>
+        </section>
 
-    <section class="panel" id="p-table" hidden>
-      <div class="box">
-        <h2>Ixtiyoriy jadval yaratish</h2>
-        <p class="muted small">Filtr bilan kerakli odamlarni tanlang, kerakli ustunlarni qoldiring va Excel qilib yuklab oling. Tez-tez kerak bo'ladigan jadvalni shablon qilib saqlab qo'ying.</p>
-        <div id="tb-body"></div>
-      </div>
-    </section>
-    <section class="panel" id="p-comp" hidden>
-      <div class="box">
-        <h2>Korxonalar</h2>
-        <p class="muted small">Har bir korxonada qaysi guruhdan nechta o'quvchi borligi. "Shartnoma" tugmasini bosib korxona va o'quvchi shartnomasini belgilang — belgilar saqlanadi va "Jadval" bo'limida filtr sifatida ham ishlaydi.</p>
-        <div id="comp-body"></div>
-      </div>
-    </section>
-  </main>
+        <section class="panel" id="p-db" hidden>
+          <div id="db-status"></div>
+          <div class="actions-grid" id="db-upload">
+            <label class="action-card main-action" id="act-merge">
+              <input type="file" id="merge-file" accept=".xlsx,.xlsm,.xls">
+              <span class="ac-icon">＋</span>
+              <span class="ac-text"><b>Fayl qo'shish</b><small>Yangi o'quvchilar bazaga qo'shiladi, borlarining ma'lumoti yangilanadi. Hech kim o'chmaydi.</small></span>
+            </label>
+            <label class="action-card" id="act-replace">
+              <input type="file" id="master-file" accept=".xlsx,.xlsm,.xls">
+              <span class="ac-icon">⟳</span>
+              <span class="ac-text"><b>Bazani yangidan joylash</b><small>Baza butunlay tanlangan fayl bilan almashtiriladi.</small></span>
+            </label>
+          </div>
+          <div class="box" id="db-pending" hidden></div>
+          <div class="box" id="cloud-box"></div>
+          <div class="box" id="db-actions" hidden>
+            <h3>Yuklab olish va boshqaruv</h3>
+            <div class="row-btns">
+              <button id="db-export">Joriy bazani Excel'ga</button>
+              <button id="db-download">Asl yuklangan fayl</button>
+              <button id="db-clear" class="danger">Bazani bu qurilmadan o'chirish</button>
+            </div>
+          </div>
+          <p class="muted small privacy">🔒 Ma'lumotlar shu qurilmada saqlanadi. Bulut yoqilgan bo'lsa, faqat kod bilan shifrlangan holda yuboriladi. Internet bo'lmasa ham ishlaydi.</p>
+        </section>
+
+        <section class="panel" id="p-edit" hidden>
+          <div id="edit-body"></div>
+        </section>
+
+        <section class="panel" id="p-fill" hidden>
+          <div class="box">
+            <p class="muted">Topshiriq bilan kelgan bo'sh jadvalni (.xlsx) yuklang. Ustun nomlari bo'yicha bazadan kerakli ma'lumot avtomatik qo'yiladi; faylning ko'rinishi, formatlari, boshqa varaqlari o'zgarmaydi.</p>
+            <label class="action-card main-action">
+              <input type="file" id="tpl-file" accept=".xlsx,.xlsm">
+              <span class="ac-icon">⇪</span>
+              <span class="ac-text"><b>Jadvalni tanlash</b><small>Faqat .xlsx formatidagi fayl</small></span>
+            </label>
+          </div>
+          <div class="box" id="tpl-body" hidden></div>
+        </section>
+
+        <section class="panel" id="p-table" hidden>
+          <div class="box">
+            <div id="tb-body"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="p-comp" hidden>
+          <div class="box">
+            <div id="comp-body"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
 
-  <script src="vendor/xlsx.full.min.js?v=5"></script>
-  <script src="vendor/jszip.min.js?v=5"></script>
-  <script src="js/match.js?v=5"></script>
-  <script src="js/xlsxfill.js?v=5"></script>
-  <script src="js/xlsxwrite.js?v=5"></script>
-  <script src="js/filters.js?v=5"></script>
-  <script src="js/sync.js?v=5"></script>
-  <script src="js/translit.js?v=5"></script>
-  <script src="js/edit.js?v=5"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="vendor/xlsx.full.min.js?v=6"></script>
+  <script src="vendor/jszip.min.js?v=6"></script>
+  <script src="js/match.js?v=6"></script>
+  <script src="js/xlsxfill.js?v=6"></script>
+  <script src="js/xlsxwrite.js?v=6"></script>
+  <script src="js/filters.js?v=6"></script>
+  <script src="js/sync.js?v=6"></script>
+  <script src="js/translit.js?v=6"></script>
+  <script src="js/edit.js?v=6"></script>
+  <script src="js/dashboard.js?v=6"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>
