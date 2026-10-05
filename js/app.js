@@ -211,7 +211,7 @@ const state = {
   view: null,      // baza + qo'shimcha (virtual) ustunlar: shartnoma belgilari
   script: 'orig',  // ko'rinish: 'orig' | 'lat' | 'cyr'
   marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
-  compUi: { q: '', show: 'all', open: new Set() },
+  compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list' },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
 };
 
@@ -1021,7 +1021,18 @@ function renderCompanies() {
   const ui = state.compUi, db = state.view;
   const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
   const ti = dbFieldIdx('telefon');
-  const all = data.list;
+  const gi = data.gi;
+  // Guruh bo'yicha filtr: korxonalar va ichidagi o'quvchilar shu guruhga qisqaradi
+  const groupVals = gi >= 0 ? [...db.rows.reduce((m, r) => { const g = String(r[gi] ?? '').trim(); if (g) m.set(g, (m.get(g) || 0) + 1); return m; }, new Map())]
+    .sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })) : [];
+  if (ui.group && !groupVals.some(([g]) => g === ui.group)) ui.group = '';
+  let all = data.list;
+  if (ui.group) {
+    all = all.map((c) => {
+      const rows = c.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
+      return { ...c, rows, withContract: rows.filter((r) => studentContract(r).on).length, groups: [[ui.group, rows.length]] };
+    }).filter((c) => c.rows.length);
+  }
   let list = all;
   const q = Match.norm(ui.q);
   if (q) list = list.filter((c) => Match.norm(c.name).includes(q) || c.rows.some((r) => Match.norm(r[nameIdx]).includes(q)));
@@ -1031,7 +1042,45 @@ function renderCompanies() {
   const stuWith = all.reduce((n, c) => n + c.withContract, 0);
   const compWith = all.filter((c) => c.contract).length;
 
+  // Guruh tanlanganda: o'quvchilar ro'yxati (+/− belgilash uchun eng qulay ko'rinish)
+  const groupList = () => {
+    let gr = db.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
+    const cfi = dbFieldIdx('korxonanomi', 'korxona');
+    if (q) gr = gr.filter((r) => Match.norm(r[nameIdx]).includes(q) || Match.norm(r[cfi]).includes(q));
+    if (ui.show === 'yes') gr = gr.filter((r) => cfi >= 0 && r[cfi] && companyContract(r[cfi]));
+    if (ui.show === 'no') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyContract(r[cfi])));
+    return `
+      <div class="row-btns" style="margin-top:0">
+        <button data-allgroup="1">Guruhning hammasiga o'quvchi shartnomasi ＋</button>
+        <button data-allgroup="0">Hammasiga −</button>
+      </div>
+      <div class="scroll" style="margin-top:12px"><table class="prev stu glist">
+        <thead><tr><th>№</th><th>F.I.Sh</th><th>O'quvchi shartnomasi</th><th>Korxona</th><th>Korxona shartnomasi</th></tr></thead>
+        <tbody>${gr.map((r, i) => {
+          const sc = studentContract(r);
+          const comp = cfi >= 0 ? r[cfi] : null;
+          const cc = comp ? companyContract(comp) : false;
+          return `<tr>
+            <td>${i + 1}</td>
+            <td class="wrap"><b>${esc(r[nameIdx])}</b></td>
+            <td><button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button></td>
+            <td class="wrap">${comp ? esc(comp) : '<span class="muted">—</span>'}</td>
+            <td>${comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="5" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
+      </table></div>`;
+  };
+
   box.innerHTML = `
+    ${groupVals.length ? `<div class="grp-bar">
+      <span class="fl-cap">Guruh:</span>
+      <button class="gbtn ${ui.group ? '' : 'on'}" data-group="">Hammasi</button>
+      ${groupVals.map(([g, n]) => `<button class="gbtn ${ui.group === g ? 'on' : ''}" data-group="${esc(g)}">${esc(g)} <span>${n}</span></button>`).join('')}
+    </div>` : ''}
+    ${ui.group ? `<div class="seg wide" id="comp-view">
+      <button data-view="list" class="${ui.view === 'list' ? 'on' : ''}">📋 ${esc(ui.group)}-guruh o'quvchilari</button>
+      <button data-view="comp" class="${ui.view === 'comp' ? 'on' : ''}">🏢 Korxonalar bo'yicha</button>
+    </div>` : ''}
     <div class="stats">
       <div><b>${all.length}</b><span>korxona</span></div>
       <div class="ok"><b>${compWith}</b><span>korxona shartnomasi bor</span></div>
@@ -1043,7 +1092,7 @@ function renderCompanies() {
       <button data-show="yes" class="${ui.show === 'yes' ? 'on' : ''}">Shartnoma bor (${compWith})</button>
       <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Shartnoma yo'q (${all.length - compWith})</button>
     </div>
-    <div class="comp-list">${list.map((c) => `
+    ${ui.group && ui.view === 'list' ? groupList() : `<div class="comp-list">${list.map((c) => `
       <details class="comp ${c.contract ? 'has' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
         <summary>
           <div class="comp-top">
@@ -1073,7 +1122,7 @@ function renderCompanies() {
             <button data-xlcomp="${esc(c.key)}">O'quvchilar ro'yxati (Excel)</button>
           </div>
         </div>
-      </details>`).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>
+      </details>`).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>`}
     <div class="row-btns"><button class="primary" id="comp-xl">Korxonalar ro'yxatini Excel'ga</button></div>`;
 
   $('#comp-q').oninput = (e) => {
@@ -1098,6 +1147,16 @@ function renderCompanies() {
     marksChanged();
   }));
   const byKey = (k) => all.find((c) => c.key === k);
+  box.querySelectorAll('[data-group]').forEach((b) => (b.onclick = () => { ui.group = b.dataset.group; renderCompanies(); }));
+  const selG = box.querySelector('.gbtn.on');
+  if (selG && ui.group) { const bar = selG.parentElement; bar.scrollLeft = selG.offsetLeft - bar.clientWidth / 2 + selG.clientWidth / 2; }
+  box.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => { ui.view = b.dataset.view; renderCompanies(); }));
+  box.querySelectorAll('[data-allgroup]').forEach((b) => (b.onclick = () => {
+    const rows = db.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
+    if (!confirm(`${ui.group}-guruhning ${rows.length} ta o'quvchisiga "${b.dataset.allgroup === '1' ? '＋' : '−'}" qo'yilsinmi?`)) return;
+    for (const r of rows) state.marks.stu[studentKey(r)] = b.dataset.allgroup === '1';
+    marksChanged();
+  }));
   box.querySelectorAll('[data-allstu]').forEach((b) => (b.onclick = () => {
     for (const r of byKey(b.dataset.allstu).rows) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
     marksChanged();

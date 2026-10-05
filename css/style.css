@@ -477,3 +477,13 @@ table.stu td.wrap { white-space: normal; min-width: 150px; }
 .bulk { display: flex; flex-direction: column; gap: 10px; }
 .bulk h4 { margin-bottom: 0; }
 .ed-count { margin: 0 0 8px; color: var(--text-2); }
+
+/* ---------- Korxonalar: guruh filtri ---------- */
+.grp-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.gbtn { min-height: 34px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; gap: 6px; }
+.gbtn span { font-size: 11px; color: var(--muted); font-weight: 500; }
+.gbtn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.gbtn.on span { color: var(--accent-text); opacity: .8; }
+@media (max-width: 700px) { .grp-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .gbtn { flex: none; } }
+table.glist td { padding: 8px 10px; }
+table.glist td.wrap { white-space: normal; }
