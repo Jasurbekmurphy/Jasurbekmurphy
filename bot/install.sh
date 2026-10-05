@@ -189,10 +189,52 @@ ok "Avtomatik yangilanish yoqildi (log: journalctl -u $SVC-update)"
 
 # ---------------------------------------------------------------- 5. HTTPS (Caddy)
 busy=$(ss -ltnp 2>/dev/null | grep -E ':(80|443)\s' | grep -v caddy || true)
-if [ -n "$busy" ]; then
-  warn "80/443-port boshqa dastur (nginx/apache) bilan band — Caddy o'rnatilmadi."
-  echo "    Mavjud veb-serverga quyidagicha yo'naltiring:  $DOMAIN  →  http://127.0.0.1:$PORT"
-  echo "    (nginx: location / { proxy_pass http://127.0.0.1:$PORT; }  + certbot bilan SSL)"
+if [ -n "$busy" ] && echo "$busy" | grep -q nginx && command -v nginx >/dev/null; then
+  # Serverda nginx bor — unga bot uchun alohida sayt qo'shamiz (boshqa saytlarga tegilmaydi)
+  say "nginx topildi — bot uchun $DOMAIN sozlanmoqda…"
+  CONF=/etc/nginx/conf.d/jadval-bot.conf
+  if [ ! -f "$CONF" ] || ! grep -q "server_name $DOMAIN;" "$CONF"; then
+    cat > "$CONF" <<EOF
+# Jadval Baza davomat boti
+server {
+    listen 80;
+    server_name $DOMAIN;
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+  fi
+  if ! nginx -t >/dev/null 2>&1; then
+    rm -f "$CONF"; nginx -t || true
+    die "nginx sozlamasida xato chiqdi — bot sozlamasi olib tashlandi (yuqoridagi xabarga qarang)"
+  fi
+  systemctl reload nginx
+  ok "nginx: $DOMAIN → bot"
+  if ! command -v certbot >/dev/null; then
+    say "certbot (bepul SSL) o'rnatilmoqda…"
+    apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
+  fi
+  say "SSL sertifikat olinmoqda…"
+  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect --keep-until-expiring; then
+    systemctl reload nginx
+  else
+    warn "Sertifikat olinmadi. $DOMAIN server IP'siga ($IP) qaraganini va 80-port tashqaridan ochiqligini tekshiring."
+  fi
+  HTTPS_OK=0
+  for i in $(seq 1 10); do
+    if curl -fsS -m 5 "https://$DOMAIN/" 2>/dev/null | grep -q "ishlayapti"; then HTTPS_OK=1; break; fi
+    sleep 2
+  done
+  [ $HTTPS_OK -eq 1 ] && ok "HTTPS ishlayapti: https://$DOMAIN" || warn "HTTPS hali ishlamayapti: curl -v https://$DOMAIN/"
+elif [ -n "$busy" ]; then
+  warn "80/443-port boshqa dastur bilan band — HTTPS avtomatik sozlanmadi."
+  echo "    Mavjud veb-serverga quyidagicha yo'naltiring:  $DOMAIN  →  http://127.0.0.1:$PORT  (+ SSL)"
   HTTPS_OK=0
 else
   if ! command -v caddy >/dev/null; then
