@@ -578,3 +578,11 @@ html, body { overflow-x: clip; }
 /* bo'shliq tuzatishlari ko'rinsin */
 .sp-row s, .sp-row b, .sp-ul s, .sp-ul b { white-space: pre-wrap; }
 .sp-row s, .sp-ul s { background: var(--bad-soft); text-decoration-color: var(--bad); }
+/* Korxona ichida guruh tanlash */
+.cg-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 4px; }
+.gchip[data-cg] { cursor: pointer; }
+.gchip[data-cg]:hover { border-color: var(--accent); }
+.gchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+table.resp-tbl td { vertical-align: top; }
+table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5px; }
+@media (max-width: 700px) { .cg-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .cg-bar .gbtn { flex: none; } }

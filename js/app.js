@@ -216,7 +216,7 @@ const state = {
   marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
   resp: { people: [], assign: {} }, // mas'ul shaxslar va ularga biriktirilgan korxonalar
   bot: { url: '', key: '' },          // davomat boti (Cloudflare Worker) manzili va kaliti
-  compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list' },
+  compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list', cardGroup: {} },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
 };
 
@@ -1068,7 +1068,14 @@ function companyGroups() {
     return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && companyContract(name), order: !inst && companyOrder(name), withContract };
   });
   list.sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
-  return { list, gi };
+  // Berilgan o'quvchilar bo'yicha korxonadan mas'ul / usta ro'yxati (ism · telefon)
+  const who = (rows, i) => {
+    const m = new Map();
+    if (i < 0) return [];
+    for (const r of rows) if (r[i]) { const tel = phoneAfter(i) >= 0 ? r[phoneAfter(i)] : ''; m.set(r[i] + (tel ? ' · ' + tel : ''), 1); }
+    return [...m.keys()];
+  };
+  return { list, gi, people: (rows) => who(rows, ri), masters: (rows) => who(rows, ui) };
 }
 
 function renderCompanies() {
@@ -1161,7 +1168,12 @@ function renderCompanies() {
       <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Hamkorlik yo'q (${realComps - compWith})</button>
       <button data-show="noorder" class="${ui.show === 'noorder' ? 'on' : ''}">Buyruq yo'q (${realComps - orderWith})</button>
     </div>
-    ${ui.group && ui.view === 'list' ? groupList() : `<div class="comp-list">${list.map((c) => `
+    ${ui.group && ui.view === 'list' ? groupList() : `<div class="comp-list">${list.map((c) => {
+      // kartochka ichida tanlangan guruh
+      let sel = ui.cardGroup[c.key] || '';
+      if (sel && !c.groups.some(([gname]) => gname === sel)) sel = '';
+      const shown = sel ? c.rows.filter((r) => String(r[data.gi] ?? '—') === sel) : c.rows;
+      return `
       <details class="comp ${c.contract && c.order ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
         <summary>
           <div class="comp-top">
@@ -1175,26 +1187,37 @@ function renderCompanies() {
             <span>👥 ${c.rows.length} o'quvchi</span>
             ${c.need ? `<span class="${c.withContract === c.need ? 'ok' : 'warn'}">📄 o'quvchi shartnomasi ${c.withContract}/${c.need}</span>` : '<span>🎓 o\'qishda — shartnoma talab qilinmaydi</span>'}
           </div>
-          <div class="gchips">${c.groups.map(([gname, n]) => `<span class="gchip">${esc(gname)}-guruh <b>${n}</b></span>`).join('')}</div>
+          <div class="gchips">${c.groups.map(([gname, n]) => `<span class="gchip ${sel === gname ? 'on' : ''}" data-cg="${esc(c.key)}" data-g="${esc(gname)}" title="Shu guruhni ko'rish">${esc(gname)}-guruh <b>${n}</b></span>`).join('')}</div>
         </summary>
         <div class="comp-body">
-          ${c.people.size ? `<p class="small"><span class="muted">Korxonadan mas'ul:</span> ${[...c.people.keys()].map(esc).join('; ')}</p>` : ''}
-          ${c.masters.size ? `<p class="small"><span class="muted">Usta:</span> ${[...c.masters.keys()].map(esc).join('; ')}</p>` : ''}
+          ${c.groups.length > 1 ? `<div class="cg-bar">
+            <button class="gbtn ${sel ? '' : 'on'}" data-cg="${esc(c.key)}" data-g="">👥 O'quvchilar (hammasi) <span>${c.rows.length}</span></button>
+            ${c.groups.map(([gname, n]) => `<button class="gbtn ${sel === gname ? 'on' : ''}" data-cg="${esc(c.key)}" data-g="${esc(gname)}">${esc(gname)}-guruh <span>${n}</span></button>`).join('')}
+          </div>` : ''}
+          ${sel || c.groups.length <= 1 ? `
+            ${data.people(shown).length ? `<p class="small"><span class="muted">${sel ? esc(sel) + "-guruh · korxonadan mas'ul:" : "Korxonadan mas'ul:"}</span> ${data.people(shown).map(esc).join('; ')}</p>` : ''}
+            ${data.masters(shown).length ? `<p class="small"><span class="muted">${sel ? esc(sel) + '-guruh · usta:' : 'Usta:'}</span> ${data.masters(shown).map(esc).join('; ')}</p>` : ''}`
+          : `<div class="scroll" style="margin:10px 0"><table class="prev resp-tbl">
+              <thead><tr><th>Guruh</th><th>O'quvchi</th><th>Korxonadan mas'ul</th><th>Usta</th></tr></thead>
+              <tbody>${c.groups.map(([gname, n]) => { const gr = c.rows.filter((r) => String(r[data.gi] ?? '—') === gname); return `<tr>
+                <td><button class="link" data-cg="${esc(c.key)}" data-g="${esc(gname)}">${esc(gname)}-guruh</button></td><td>${n}</td>
+                <td class="wrap">${data.people(gr).map(esc).join('<br>') || '—'}</td><td class="wrap">${data.masters(gr).map(esc).join('<br>') || '—'}</td></tr>`; }).join('')}</tbody>
+            </table></div>`}
           <div class="scroll"><table class="prev stu">
             <thead><tr><th>№</th><th>F.I.Sh</th><th>Shartnoma</th><th>Guruh</th><th>Telefon</th></tr></thead>
-            <tbody>${c.rows.map((r, i) => { const sc = studentContract(r); return `<tr>
+            <tbody>${shown.map((r, i) => { const sc = studentContract(r); return `<tr>
               <td>${i + 1}</td><td class="wrap">${esc(r[nameIdx])}</td>
               <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
               <td>${esc(data.gi >= 0 ? r[data.gi] ?? '' : '')}</td><td>${esc(ti >= 0 ? r[ti] ?? '' : '')}</td>
             </tr>`; }).join('')}</tbody>
           </table></div>
           <div class="row-btns">
-            <button data-allstu="${esc(c.key)}" data-v="1">Hammasiga ＋</button>
-            <button data-allstu="${esc(c.key)}" data-v="0">Hammasiga −</button>
+            <button data-allstu="${esc(c.key)}" data-v="1">${sel ? esc(sel) + '-guruhning hammasiga' : 'Hammasiga'} ＋</button>
+            <button data-allstu="${esc(c.key)}" data-v="0">${sel ? esc(sel) + '-guruhning hammasiga' : 'Hammasiga'} −</button>
             <button data-xlcomp="${esc(c.key)}">O'quvchilar ro'yxati (Excel)</button>
           </div>
         </div>
-      </details>`).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>`}
+      </details>`; }).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>`}
     <div class="row-btns"><button class="primary" id="comp-xl">Korxonalar ro'yxatini Excel'ga</button></div>`;
 
   $('#comp-q').oninput = (e) => {
@@ -1226,6 +1249,14 @@ function renderCompanies() {
     marksChanged();
   }));
   const byKey = (k) => all.find((c) => c.key === k);
+  // korxona ichida guruh tanlash (kartochkadagi tugmalar va sarlavhadagi guruh belgilari)
+  const shownOf = (c) => { const g = ui.cardGroup[c.key]; return g && c.groups.some(([x]) => x === g) ? c.rows.filter((r) => String(r[data.gi] ?? '—') === g) : c.rows; };
+  box.querySelectorAll('[data-cg]').forEach((b) => (b.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    ui.cardGroup[b.dataset.cg] = b.dataset.g;
+    ui.open.add(b.dataset.cg);
+    renderCompanies();
+  }));
   box.querySelectorAll('[data-group]').forEach((b) => (b.onclick = () => { ui.group = b.dataset.group; renderCompanies(); }));
   const selG = box.querySelector('.gbtn.on');
   if (selG && ui.group) { const bar = selG.parentElement; bar.scrollLeft = selG.offsetLeft - bar.clientWidth / 2 + selG.clientWidth / 2; }
@@ -1237,18 +1268,18 @@ function renderCompanies() {
     marksChanged();
   }));
   box.querySelectorAll('[data-allstu]').forEach((b) => (b.onclick = () => {
-    for (const r of byKey(b.dataset.allstu).rows) if (!studentContract(r).na) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
+    for (const r of shownOf(byKey(b.dataset.allstu))) if (!studentContract(r).na) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
     marksChanged();
   }));
   box.querySelectorAll('[data-xlcomp]').forEach((b) => (b.onclick = async () => {
     const c = byKey(b.dataset.xlcomp);
-    const rows = c.rows.map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, (studentContract(r).na ? INST_LABEL : studentContract(r).on ? '+' : '−')]);
+    const rows = shownOf(c).map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, (studentContract(r).na ? INST_LABEL : studentContract(r).on ? '+' : '−')]);
     const blob = await XlsxWrite.buildWorkbook({ title: c.name + ' — o\'quvchilar', sheetName: 'O\'quvchilar', headers: ['№', 'F.I.Sh', 'Guruh', 'Telefon', "O'quvchi shartnomasi"], rows });
     downloadBlob(blob, c.name.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60) + '.xlsx');
   }));
   $('#comp-xl').onclick = async () => {
     const rows = list.map((c, i) => [i + 1, c.name, c.rows.length, c.groups.map(([gname, n]) => `${gname} (${n})`).join(', '),
-      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.inst ? INST_LABEL : c.order ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, [...c.people.keys()].join('; ')]);
+      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.inst ? INST_LABEL : c.order ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, data.people(c.rows).join('; ')]);
     const blob = await XlsxWrite.buildWorkbook({ title: 'Korxonalar ro\'yxati', sheetName: 'Korxonalar',
       headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Hamkorlik shartnomasi', "Korxona buyrug'i", "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
     downloadBlob(blob, 'Korxonalar.xlsx');
