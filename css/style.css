@@ -562,3 +562,8 @@ html, body { overflow-x: clip; }
 /* Bildirishnoma bosilmaydi — ostidagi menyu tugmalarini to'smasin */
 .toast { pointer-events: none; visibility: hidden; transition: transform .25s, visibility 0s .25s; }
 .toast.show { visibility: visible; transition: transform .25s, visibility 0s; }
+.p-xl { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.p-xl > * { flex: 1 1 150px; }
+.file-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 9px 14px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-weight: 600; cursor: pointer; background: var(--surface); font-size: 15px; }
+.file-btn:hover { background: var(--accent-soft); }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

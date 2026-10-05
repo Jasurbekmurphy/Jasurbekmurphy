@@ -1,4 +1,4 @@
-/* global state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob */
+/* global state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog */
 'use strict';
 // Mas'ul shaxslar va Telegram bot orqali davomat.
 
@@ -282,6 +282,11 @@ function peopleHtml() {
     <div class="att-grid">
       <div class="box">
         <h3>Mas'ul shaxslar (${state.resp.people.length})</h3>
+        <div class="p-xl">
+          <button id="p-tpl" type="button">📥 Excel shablon</button>
+          <label class="file-btn">📤 Excel'dan yuklash<input type="file" id="p-xlfile" accept=".xlsx,.xlsm,.xls"></label>
+        </div>
+        <p class="fl-note" style="margin-bottom:10px">Shablonni yuklab oling, to'ldiring va qaytarib yuklang. Yoki pastda bittadan qo'shing.</p>
         <form id="p-add" class="p-form">
           <input id="pa-name" placeholder="F.I.Sh *" required>
           <input id="pa-tg" placeholder="Telegram: @username">
@@ -322,6 +327,8 @@ function peopleHtml() {
 }
 
 function bindPeople(box) {
+  $('#p-tpl').onclick = downloadPeopleTemplate;
+  $('#p-xlfile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importPeopleFile(f); };
   $('#p-add').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#pa-name').value.trim();
@@ -434,3 +441,166 @@ function bindBot(box) {
 }
 
 attTick();
+
+// ---------------------------------------------------------------- Mas'ullarni Excel orqali qo'shish
+function peopleCompanies(pid) {
+  return attCompanies().list.filter((c) => state.resp.assign[c.key] === pid).map((c) => c.name);
+}
+
+async function downloadPeopleTemplate() {
+  if (!state.db) return;
+  const { list, gi } = attCompanies();
+  const pname = (pid) => (state.resp.people.find((p) => p.id === pid) || {}).name || '';
+  const blob = await XlsxWrite.buildWorkbook({ sheets: [
+    {
+      sheetName: "Mas'ullar",
+      title: "Mas'ullar: har qatorga bitta mas'ul. Korxonalarni ; bilan ajrating yoki \"Korxonalar\" varag'ida mas'ul ismini yozing",
+      headers: ['F.I.Sh *', 'Telegram (@username)', 'Telefon', 'Korxonalar (; bilan ajrating)'],
+      rows: state.resp.people.map((p) => [p.name, p.tg || '', p.phone || '', peopleCompanies(p.id).join('; ')]),
+      blankRows: 30,
+      minWidths: [34, 22, 18, 60],
+    },
+    {
+      sheetName: 'Korxonalar',
+      title: "Korxonalar: \"Mas'ul\" ustuniga mas'ulning F.I.Sh ini yozing (Mas'ullar varag'idagidek)",
+      headers: ['№', 'Korxona nomi', "O'quvchilar", 'Guruhlar', "Mas'ul (F.I.Sh)"],
+      rows: list.map((c, i) => [i + 1, c.name, c.rows.length, gi >= 0 ? [...new Set(c.rows.map((r) => r[gi]).filter((v) => v != null))].join(', ') : '', pname(state.resp.assign[c.key])]),
+      minWidths: [5, 44, 12, 16, 34],
+    },
+  ] });
+  downloadBlob(blob, "Mas'ullar shabloni.xlsx");
+}
+
+// Sarlavha qatorini topish: kerakli kalit so'zlarning hammasi bor qator
+function findHeader(sheet, needs) {
+  for (let r = 0; r < Math.min(sheet.rows, 12); r++) {
+    const canon = sheet.grid[r].map((v) => (v == null ? '' : Match.canon(v)));
+    const cols = {};
+    for (const [k, test] of Object.entries(needs)) cols[k] = canon.findIndex(test);
+    const found = Object.values(cols).filter((c) => c >= 0);
+    // kamida 2 ta ustun, hammasi har xil katakda (sarlavha bitta birlashtirilgan matn emas)
+    if (found.length >= 2 && cols.name >= 0 && new Set(found).size === found.length) return { row: r, cols };
+  }
+  return null;
+}
+
+function companyMatcher() {
+  const { list } = attCompanies();
+  const byKey = new Map(list.map((c) => [companyKey(c.name), c]));
+  return (text) => {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    const exact = byKey.get(companyKey(t));
+    if (exact) return exact;
+    let best = null, score = 0;
+    for (const c of list) {
+      const sc = Match.similarity(c.name, t);
+      if (sc > score) { score = sc; best = c; }
+    }
+    return score >= 0.82 ? best : null;
+  };
+}
+
+async function importPeopleFile(file) {
+  let wb;
+  try { wb = readWorkbook(await readFile(file)); } catch (e) { toast("Faylni o'qib bo'lmadi: " + e.message, 'err'); return; }
+  const people = state.resp.people.map((p) => ({ ...p }));
+  const nk = (s) => Match.nameKey(s);
+  const ph9 = (s) => Match.digits(s).slice(-9);
+  const tgk = (s) => String(s || '').trim().replace(/^@/, '').toLowerCase();
+  const findPerson = (name, tg, phone) => people.find((p) => (name && nk(p.name) === nk(name)) || (tg && tgk(p.tg) && tgk(p.tg) === tgk(tg)) || (phone && ph9(phone).length === 9 && ph9(p.phone) === ph9(phone)));
+  const matchCompany = companyMatcher();
+  const added = [], updated = new Set(), assigns = new Map(), missComp = new Set(), missPerson = new Set();
+
+  for (const name of wb.names) {
+    const sh = wb.sheets[name];
+    // 1) Mas'ullar varag'i
+    const hp = findHeader(sh, {
+      name: (c) => c.includes('fish') && !c.includes('masul'),
+      tg: (c) => c.includes('telegram') || c.includes('username'),
+      phone: (c) => c.includes('telefon'),
+      comps: (c) => c.includes('korxona'),
+    });
+    if (hp && (hp.cols.tg >= 0 || hp.cols.phone >= 0)) {
+      for (let r = hp.row + 1; r < sh.rows; r++) {
+        const row = sh.grid[r];
+        const pn = String(row[hp.cols.name] ?? '').trim();
+        if (!pn) continue;
+        let tg = hp.cols.tg >= 0 ? String(row[hp.cols.tg] ?? '').trim() : '';
+        tg = tg.replace(/^https?:\/\/t\.me\//i, '');
+        if (tg && !tg.startsWith('@')) tg = '@' + tg;
+        const phone = hp.cols.phone >= 0 ? String(row[hp.cols.phone] ?? '').trim() : '';
+        let p = findPerson(pn, tg, phone);
+        if (!p) {
+          p = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: pn, tg, phone };
+          people.push(p); added.push(p);
+        } else {
+          const before = JSON.stringify(p);
+          p.name = pn; if (tg) p.tg = tg; if (phone) p.phone = phone;
+          if (JSON.stringify(p) !== before && !added.includes(p)) updated.add(p);
+        }
+        if (hp.cols.comps >= 0 && row[hp.cols.comps] != null) {
+          for (const part of String(row[hp.cols.comps]).split(/[;\n]+/)) {
+            const t = part.trim();
+            if (!t) continue;
+            const c = matchCompany(t);
+            if (c) assigns.set(c.key, p.id); else missComp.add(t);
+          }
+        }
+      }
+      continue;
+    }
+    // 2) Korxonalar varag'i (korxona + mas'ul)
+    const hc = findHeader(sh, {
+      name: (c) => c.includes('korxona'),
+      who: (c) => c.includes('masul'),
+    });
+    if (hc && hc.cols.who >= 0) {
+      for (let r = hc.row + 1; r < sh.rows; r++) {
+        const row = sh.grid[r];
+        const cn = String(row[hc.cols.name] ?? '').trim();
+        const who = String(row[hc.cols.who] ?? '').trim();
+        if (!cn || !who) continue;
+        const c = matchCompany(cn);
+        if (!c) { missComp.add(cn); continue; }
+        const p = findPerson(who, '', '');
+        if (p) assigns.set(c.key, p.id); else missPerson.add(who);
+      }
+    }
+  }
+
+  const changedAssign = [...assigns].filter(([k, pid]) => state.resp.assign[k] !== pid);
+  if (!added.length && !updated.size && !changedAssign.length) {
+    toast(missComp.size || missPerson.size ? "O'zgarish yo'q — ba'zi nomlar topilmadi" : "Faylda yangi ma'lumot topilmadi", missComp.size || missPerson.size ? 'err' : '');
+    if (!missComp.size && !missPerson.size) return;
+  }
+  const pn = (pid) => (people.find((p) => p.id === pid) || {}).name || '';
+  const cname = new Map(attCompanies().list.map((c) => [c.key, c.name]));
+  const dlg = dialog(`
+    <div class="dlg-form">
+      <div class="dlg-head"><h3>Excel'dan mas'ullar</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
+      <div class="dlg-body" style="display:block">
+        <div class="stats">
+          <div class="ok"><b>+${added.length}</b><span>yangi mas'ul</span></div>
+          <div class="warn"><b>${updated.size}</b><span>yangilanadi</span></div>
+          <div><b>${changedAssign.length}</b><span>korxona biriktiriladi</span></div>
+        </div>
+        ${added.length ? `<details open><summary>Yangi mas'ullar</summary><ul class="small">${added.map((p) => `<li><b>${esc(p.name)}</b> ${esc(p.tg || '')} ${esc(p.phone || '')}</li>`).join('')}</ul></details>` : ''}
+        ${changedAssign.length ? `<details ${changedAssign.length <= 30 ? 'open' : ''}><summary>Biriktirishlar</summary><ul class="small">${changedAssign.map(([k, pid]) => `<li>${esc(cname.get(k))} → <b>${esc(pn(pid))}</b>${state.resp.assign[k] ? ` <span class="muted">(oldin: ${esc(pn(state.resp.assign[k]))})</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+        ${missComp.size ? `<details open><summary class="bad">Topilmagan korxonalar (${missComp.size})</summary><ul class="small">${[...missComp].map((t) => `<li>${esc(t)}</li>`).join('')}</ul><p class="fl-note">Nomni "Korxonalar" varag'idagidek yozing.</p></details>` : ''}
+        ${missPerson.size ? `<details open><summary class="bad">Topilmagan mas'ullar (${missPerson.size})</summary><ul class="small">${[...missPerson].map((t) => `<li>${esc(t)}</li>`).join('')}</ul><p class="fl-note">Avval "Mas'ullar" varag'iga qo'shing.</p></details>` : ''}
+      </div>
+      <div class="dlg-foot"><span class="grow"></span>
+        <button type="button" data-close>Bekor qilish</button>
+        <button type="button" class="primary" data-apply ${added.length || updated.size || changedAssign.length ? '' : 'disabled'}>Saqlash</button></div>
+    </div>`);
+  dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
+  dlg.querySelector('[data-apply]').onclick = async () => {
+    state.resp.people = people;
+    for (const [k, pid] of changedAssign) state.resp.assign[k] = pid;
+    dlg.close();
+    await respChanged();
+    renderAttendance();
+    toast(`Saqlandi: +${added.length} mas'ul, ${changedAssign.length} ta biriktirish ✓`, 'ok');
+  };
+}

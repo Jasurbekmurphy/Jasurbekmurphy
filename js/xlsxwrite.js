@@ -29,14 +29,9 @@
     return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
   }
 
-  /**
-   * @param {{title?:string, sheetName?:string, headers:string[], rows:any[][]}} t
-   * @returns {Promise<Blob>}
-   */
-  async function buildWorkbook(t) {
-    const L = XlsxFill.colToLetters;
-    const n = t.headers.length;
-    const sheetName = (t.sheetName || 'Jadval').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Jadval';
+  // Bitta varaq XML'i
+  function sheetXml(t, L) {
+    const n = Math.max(1, t.headers.length);
     let r = 1;
     const rowsXml = [];
     let merge = '';
@@ -51,15 +46,19 @@
       r++;
       rowsXml.push(`<row r="${r}">${row.map((v, c) => cell(L(c) + r, v, 1)).join('')}</row>`);
     }
-
-    // Ustun kengligi: eng uzun qiymatga qarab (8…50)
+    // Bo'sh qatorlar (shablon uchun — chegarali kataklar)
+    for (let k = 0; k < (t.blankRows || 0); k++) {
+      r++;
+      rowsXml.push(`<row r="${r}">${t.headers.map((_, c) => cell(L(c) + r, null, 1)).join('')}</row>`);
+    }
+    // Ustun kengligi: eng uzun qiymatga qarab (6…50)
     const widths = t.headers.map((h, c) => {
       let w = Math.min(String(h).length, 30);
       for (const row of t.rows) w = Math.max(w, String(row[c] ?? '').length);
-      return Math.max(6, Math.min(50, w + 2));
+      return Math.max(6, Math.min(50, Math.max(w + 2, (t.minWidths && t.minWidths[c]) || 0)));
     });
     const lastRef = L(n - 1) + Math.max(r, headerRow);
-    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <dimension ref="A1:${lastRef}"/>
 <sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
@@ -71,18 +70,36 @@ ${merge}
 <pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
 <pageSetup orientation="landscape" fitToHeight="0"/>
 </worksheet>`;
+    return { xml, headerRow, lastRow: Math.max(r, headerRow), n };
+  }
+
+  /**
+   * Bitta varaq: {title?, sheetName?, headers, rows}
+   * Bir nechta varaq: {sheets: [{title?, sheetName, headers, rows, blankRows?}, ...]}
+   * @returns {Promise<Blob>}
+   */
+  async function buildWorkbook(t) {
+    const L = XlsxFill.colToLetters;
+    const list = t.sheets || [t];
+    const used = new Set();
+    const sheets = list.map((sh, i) => {
+      let name = (sh.sheetName || 'Jadval').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Jadval';
+      while (used.has(name.toLowerCase())) name = (name.slice(0, 28) + ' ' + (i + 1));
+      used.add(name.toLowerCase());
+      return { name, ...sheetXml(sh, L) };
+    });
 
     const zip = new JSZip();
     zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
     zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
     zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEsc(sheetName)}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${xmlEsc(sheetName.replace(/'/g, "''"))}'!$A$${headerRow}:$${L(n - 1)}$${Math.max(r, headerRow)}</definedName></definedNames></workbook>`);
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, i) => `<sheet name="${xmlEsc(sh.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets><definedNames>${sheets.map((sh, i) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(sh.name.replace(/'/g, "''"))}'!$A$${sh.headerRow}:$${L(sh.n - 1)}$${sh.lastRow}</definedName>`).join('')}</definedNames></workbook>`);
     zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
     zip.file('xl/styles.xml', STYLES);
-    zip.file('xl/worksheets/sheet1.xml', sheet);
+    sheets.forEach((sh, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sh.xml));
     return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
 
