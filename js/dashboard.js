@@ -1,4 +1,4 @@
-/* global Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -26,7 +26,11 @@ function countBy(rows, idx) {
   return [...m];
 }
 
+// Virtual ustun (shartnoma belgilari) — yozuv rejimidan qat'i nazar o'zgarmas belgi bo'yicha
+const vfield = (vid) => state.view.fields.findIndex((f) => f.vid === vid);
+
 function openTableWith(field, value) {
+  if (field == null || field < 0) throw new Error('ustun topilmadi');
   if (!state.table) state.table = defaultTable();
   const f = Filters.newFilter(field);
   f.values = [value === "(bo'sh)" ? '' : value];
@@ -205,7 +209,8 @@ function renderDashboard() {
     }
     openTableWith(fieldOf[id], v);
   }));
-  box.querySelectorAll('[data-kpi]').forEach((b) => (b.onclick = () => {
+  box.querySelectorAll('[data-kpi]').forEach((b) => (b.onclick = () => { try { kpiClick(b); } catch (e) { console.error(e); toast("Ochib bo'lmadi: " + e.message, 'err'); } }));
+  function kpiClick(b) {
     const id = b.dataset.kpi;
     if (id === 'work') openTablePreset(pay.map((field, k) => ({ ...Filters.newFilter(field), op: 'notempty', join: k ? 'or' : 'and' })));
     else if (id === 'stay') {
@@ -213,9 +218,9 @@ function renderDashboard() {
       if (i >= 0) openTableWith(stay, String(state.view.rows[i][stay]));
     }
     else if (id === 'comp') showTab('p-comp');
-    else if (id === 'cat4') openTableWith(state.view.fields.findIndex((f) => f.virtual && f.name === "O'quvchi shartnomasi"), '4-toifa');
-    else if (id === 'stuc') openTableWith(state.view.fields.findIndex((f) => f.virtual && f.name === "O'quvchi shartnomasi"), '−');
+    else if (id === 'cat4') openTableWith(vfield('stu'), '4-toifa');
+    else if (id === 'stuc') openTableWith(vfield('stu'), '−');
     else if (id === 'issues') { editUi.mode = iss.bad.length ? 'bad' : iss.dups.length ? 'dup' : 'all'; renderEdit(); showTab('p-edit'); }
     else showTab('p-table');
-  }));
+  }
 }

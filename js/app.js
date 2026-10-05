@@ -1021,9 +1021,9 @@ function computeView() {
   if (!db) { state.view = null; return; }
   const ci = dbFieldIdx('korxonanomi', 'korxona');
   const fields = db.fields.concat([
-    { col: -1, name: 'Korxona shartnomasi', label: 'Korxona shartnomasi (+/−)', virtual: true },
-    { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true },
-    { col: -1, name: "Korxona buyrug'i", label: "Korxona buyrug'i (+/−)", virtual: true },
+    { col: -1, name: 'Korxona shartnomasi', label: 'Korxona shartnomasi (+/−)', virtual: true, vid: 'comp' },
+    { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true, vid: 'stu' },
+    { col: -1, name: "Korxona buyrug'i", label: "Korxona buyrug'i (+/−)", virtual: true, vid: 'order' },
   ]);
   const rows = db.rows.map((r) => r.concat([
     ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
