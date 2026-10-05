@@ -209,6 +209,7 @@ const state = {
   templates: [],   // saqlangan jadval shablonlari
   table: null,     // "Jadval" panelidagi joriy sozlama
   view: null,      // baza + qo'shimcha (virtual) ustunlar: shartnoma belgilari
+  script: 'orig',  // ko'rinish: 'orig' | 'lat' | 'cyr'
   marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
   compUi: { q: '', show: 'all', open: new Set() },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
@@ -242,6 +243,13 @@ function renderDbStatus() {
   $('#db-actions').hidden = false;
 }
 
+function renderHeader() {
+  const sub = $('#hdr-sub');
+  if (!sub) return;
+  const db = state.db, c = state.cloud;
+  sub.textContent = db ? `${db.rows.length} o'quvchi` + (c.session ? ' · ☁️ bulut' : '') + (c.dirty ? ' · ⚠ yuborilmagan' : '') : "Baza bo'sh";
+}
+
 async function onMasterFile(file) {
   try {
     const buf = await readFile(file);
@@ -259,42 +267,84 @@ function renderPending() {
   const box = $('#db-pending');
   if (!p) { box.hidden = true; return; }
   box.hidden = false;
-  const diff = diffMasters(state.db, p);
-  let diffHtml = '';
-  if (diff) {
-    const nm = (r) => esc(r[p.nameIdx >= 0 ? p.nameIdx : 0]);
-    diffHtml = `
-      <div class="stats">
-        <div class="ok"><b>+${diff.added.length}</b><span>yangi</span></div>
-        <div class="warn"><b>${diff.changed.length}</b><span>o'zgargan</span></div>
-        <div class="bad"><b>−${diff.removed.length}</b><span>o'chirilgan</span></div>
+  if (!p.mode) p.mode = state.db ? 'merge' : 'replace';
+  const nm = (db, r) => esc(r[db.nameIdx >= 0 ? db.nameIdx : 0] ?? '');
+
+  // Tekshiruv: yangi fayldagi JShShIR
+  const iss = jshshirIssues(p);
+  const checkHtml = iss.ji < 0 ? '<p class="warn small">Faylda JShShIR ustuni topilmadi.</p>' : `
+    <div class="checks">
+      <div class="check-card ${iss.bad.length ? 'bad' : 'good'}"><b>${iss.bad.length}</b><span>JShShIR xato<br><small>14 ta raqam emas</small></span></div>
+      <div class="check-card ${iss.dups.length ? 'bad' : 'good'}"><b>${iss.dups.length}</b><span>Takroriy JShShIR<br><small>dublikatlar</small></span></div>
+    </div>
+    ${iss.bad.length ? `<details open><summary class="bad">JShShIR xato bo'lganlar (${iss.bad.length})</summary><ul class="small">${iss.bad.slice(0, 100).map((i) => `<li>${nm(p, p.rows[i])} — <code>${esc(p.rows[i][iss.ji] ?? "bo'sh")}</code> (${Match.digits(p.rows[i][iss.ji]).length} ta raqam)</li>`).join('')}</ul></details>` : ''}
+    ${iss.dups.length ? `<details open><summary class="bad">Takroriy JShShIR (${iss.dups.length})</summary><ul class="small">${iss.dups.slice(0, 100).map((d) => `<li><code>${esc(d.j)}</code>: ${d.rows.map((i) => nm(p, p.rows[i])).join(' · ')}</li>`).join('')}</ul></details>` : ''}`;
+
+  let modeHtml = '', planHtml = '';
+  if (state.db) {
+    modeHtml = `
+      <div class="seg wide" id="pending-mode">
+        <button data-m="merge" class="${p.mode === 'merge' ? 'on' : ''}">Birlashtirish (qo'shish)</button>
+        <button data-m="replace" class="${p.mode === 'replace' ? 'on' : ''}">To'liq almashtirish</button>
       </div>
-      ${diff.changed.length ? `<details><summary>O'zgarishlar ro'yxati</summary><ul class="difflist">${diff.changed.slice(0, 100).map((c) =>
-        `<li><b>${nm(c.row)}</b>${c.diffs.map((d) => `<div class="small">${esc(d.field)}: <s>${esc(d.from ?? '—')}</s> → ${esc(d.to ?? '—')}</div>`).join('')}</li>`).join('')}</ul></details>` : ''}
-      ${diff.added.length ? `<details><summary>Yangi qo'shilganlar</summary><ul>${diff.added.slice(0, 100).map((r) => `<li>${nm(r)}</li>`).join('')}</ul></details>` : ''}
-      ${diff.removed.length ? `<details><summary>O'chirilganlar</summary><ul>${diff.removed.slice(0, 100).map((r) => `<li>${esc(r[state.db.nameIdx >= 0 ? state.db.nameIdx : 0])}</li>`).join('')}</ul></details>` : ''}`;
+      <p class="hint small">${p.mode === 'merge'
+        ? "Yangi o'quvchilar qo'shiladi, borlarining ma'lumoti yangilanadi. Bazadagi hech kim o'chirilmaydi, ilovada qilingan tahrirlar saqlanadi."
+        : "Baza butunlay shu fayl bilan almashtiriladi. Faylda yo'q o'quvchilar o'chadi, ilovada qilingan tahrirlar yo'qoladi."}</p>`;
+    if (p.mode === 'merge') {
+      const plan = mergePlan(state.db, p);
+      p.plan = plan;
+      planHtml = `
+        <div class="stats">
+          <div class="ok"><b>+${plan.added}</b><span>yangi o'quvchi</span></div>
+          <div class="warn"><b>${plan.updatedRows}</b><span>yangilanadi (${plan.updatedCells} katak)</span></div>
+          <div><b>${plan.db.rows.length}</b><span>jami bo'ladi</span></div>
+        </div>
+        ${plan.newFields.length ? `<p class="small">Yangi ustunlar qo'shiladi: ${plan.newFields.map((f) => `<b>${esc(f.label)}</b>`).join(', ')}</p>` : ''}
+        ${plan.changes.length ? `<details><summary>Yangilanadigan qiymatlar</summary><ul class="difflist">${plan.changes.slice(0, 100).map((c) =>
+          `<li><b>${esc(c.name)}</b><div class="small">${esc(c.field)}: <s>${esc(c.from ?? '—')}</s> → ${esc(c.to)}</div></li>`).join('')}</ul></details>` : ''}`;
+    } else {
+      const diff = diffMasters(state.db, p);
+      planHtml = `
+        <div class="stats">
+          <div class="ok"><b>+${diff.added.length}</b><span>yangi</span></div>
+          <div class="warn"><b>${diff.changed.length}</b><span>o'zgargan</span></div>
+          <div class="bad"><b>−${diff.removed.length}</b><span>o'chiriladi</span></div>
+        </div>
+        ${diff.changed.length ? `<details><summary>O'zgarishlar ro'yxati</summary><ul class="difflist">${diff.changed.slice(0, 100).map((c) =>
+          `<li><b>${nm(p, c.row)}</b>${c.diffs.map((d) => `<div class="small">${esc(d.field)}: <s>${esc(d.from ?? '—')}</s> → ${esc(d.to ?? '—')}</div>`).join('')}</li>`).join('')}</ul></details>` : ''}
+        ${diff.removed.length ? `<details><summary>O'chiriladiganlar</summary><ul>${diff.removed.slice(0, 100).map((r) => `<li>${nm(state.db, r)}</li>`).join('')}</ul></details>` : ''}`;
+    }
   }
+
   box.innerHTML = `
-    <h3>Tekshirish: ${esc(p.fileName)}</h3>
+    <h3>Yangi fayl: ${esc(p.fileName)}</h3>
     <label>Varaq
       <select id="pending-sheet">${p.sheetNames.map((n) => `<option ${n === p.sheetName ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
     </label>
     <p><b>${p.rows.length}</b> ta yozuv, <b>${p.fields.length}</b> ta ustun topildi (sarlavha ${p.headerRow + 1}-qatorda).</p>
-    <details><summary>Ustunlar</summary><ol class="small">${p.fields.map((f) => `<li>${esc(f.label)}</li>`).join('')}</ol></details>
-    ${diffHtml}
+    <h4>Tekshiruv</h4>
+    ${checkHtml}
+    ${modeHtml}
+    ${planHtml}
     <div class="row-btns">
-      <button class="primary" id="pending-save">${state.db ? 'Bazani yangilash' : 'Bazaga saqlash'}</button>
+      <button class="primary" id="pending-save">${!state.db ? 'Bazaga saqlash' : p.mode === 'merge' ? 'Bazaga qo\'shish' : 'Bazani almashtirish'}</button>
       <button id="pending-cancel">Bekor qilish</button>
     </div>`;
   $('#pending-sheet').onchange = (e) => {
     const re = parseMaster(p.file, e.target.value);
-    state.pending = { ...re, fileName: p.fileName, file: p.file };
+    state.pending = { ...re, fileName: p.fileName, file: p.file, mode: p.mode };
     renderPending();
   };
+  box.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { p.mode = b.dataset.m; renderPending(); }));
   $('#pending-cancel').onclick = () => { state.pending = null; renderPending(); };
   $('#pending-save').onclick = async () => {
-    const db = { ...state.pending, importedAt: Date.now() };
-    delete db.sheetNames;
+    let db;
+    if (state.db && p.mode === 'merge') {
+      db = { ...p.plan.db, fileName: p.fileName, file: p.file, importedAt: Date.now() };
+    } else {
+      db = { ...p, importedAt: Date.now() };
+      delete db.sheetNames; delete db.mode; delete db.plan;
+    }
     state.db = db;
     state.pending = null;
     await saveLocal();
@@ -488,7 +538,7 @@ function fieldOptions(selected) {
   const db = state.view;
   return `<option value="">— bo'sh qoldirish —</option>
     <option value="__num__" ${selected === '__num__' ? 'selected' : ''}>№ (tartib raqami 1, 2, 3…)</option>` +
-    db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${selected === i ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
+    db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${selected === i ? 'selected' : ''}>${esc(f.disp || f.label)}</option>`).join('');
 }
 
 function renderFilters() {
@@ -631,8 +681,10 @@ async function saveLocal() {
 
 function onDbChanged() {
   computeView();
+  renderHeader();
   renderDbStatus();
   renderCompanies();
+  renderEdit();
   if (state.db && !state.table) state.table = defaultTable();
   renderTable();
   if (state.tpl && state.db) renderTemplate();
@@ -696,17 +748,17 @@ function renderTable() {
     <details class="sect"><summary><h4>Ustunlar <span class="muted small">(${t.cols.length} ta tanlangan)</span></h4></summary>
       <label class="check"><input type="checkbox" id="tb-num" ${t.num ? 'checked' : ''}> Boshida № (tartib raqami) ustuni</label>
       <div class="collist">${t.cols.map((c, k) => `
-        <div class="colrow"><span class="grow">${k + 1}. ${esc(db.fields[c].label)}</span>
+        <div class="colrow"><span class="grow">${k + 1}. ${esc(db.fields[c].disp || db.fields[c].label)}</span>
           <button class="icon" data-up="${k}" ${k ? '' : 'disabled'} title="Yuqoriga">↑</button>
           <button class="icon" data-down="${k}" ${k < t.cols.length - 1 ? '' : 'disabled'} title="Pastga">↓</button>
           <button class="icon" data-rmcol="${k}" title="Olib tashlash">✕</button></div>`).join('')}</div>
-      ${unused.length ? `<select id="tb-addcol"><option value="">+ Ustun qo'shish…</option>${unused.map((i) => `<option value="${i}">${esc(db.fields[i].label)}</option>`).join('')}</select>` : ''}
+      ${unused.length ? `<select id="tb-addcol"><option value="">+ Ustun qo'shish…</option>${unused.map((i) => `<option value="${i}">${esc(db.fields[i].disp || db.fields[i].label)}</option>`).join('')}</select>` : ''}
       <div class="row-btns"><button id="tb-allcols">Hamma ustunlar</button><button id="tb-nocols">Tozalash</button></div>
     </details>
     <details class="sect"><summary><h4>Saralash, oraliq, sarlavha</h4></summary>
       <div class="grid2">
         <label>Saralash
-          <select id="tb-sort"><option value="">Bazadagi tartibda</option>${db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${t.sort === i ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
+          <select id="tb-sort"><option value="">Bazadagi tartibda</option>${db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${t.sort === i ? 'selected' : ''}>${esc(f.disp || f.label)}</option>`).join('')}</select>
         </label>
         <label>Yo'nalish
           <select id="tb-dir"><option value="1" ${t.dir === 1 ? 'selected' : ''}>O'sish (A→Я, 1→9)</option><option value="-1" ${t.dir === -1 ? 'selected' : ''}>Kamayish</option></select>
@@ -785,7 +837,7 @@ function renderTableResult() {
     const r = db.rows[+tr.dataset.ri];
     const d = document.createElement('tr');
     d.className = 'detail';
-    d.innerHTML = `<td colspan="${heads.length}"><table class="kv">${db.fields.map((f, i) => r[i] == null ? '' : `<tr><th>${esc(f.label)}</th><td>${esc(r[i])}</td></tr>`).join('')}</table></td>`;
+    d.innerHTML = `<td colspan="${heads.length}"><table class="kv">${db.fields.map((f, i) => r[i] == null ? '' : `<tr><th>${esc(f.disp || f.label)}</th><td>${esc(r[i])}</td></tr>`).join('')}</table></td>`;
     tr.after(d);
   }));
   $('#tb-dl').onclick = downloadTable;
@@ -866,7 +918,18 @@ function computeView() {
     ci >= 0 && r[ci] != null ? (companyContract(r[ci]) ? '+' : '−') : null,
     studentContract(r).on ? '+' : '−',
   ]));
-  state.view = { ...db, fields, rows };
+  // Kirill/lotin: korxona nomi ustunidan boshqa hamma matn o'giriladi
+  const sc = state.script;
+  if (sc && sc !== 'orig') {
+    const conv = (v) => Translit.convert(v, sc);
+    state.view = {
+      ...db,
+      fields: fields.map((f) => ({ ...f, name: conv(f.name), disp: conv(f.label) })),
+      rows: rows.map((r) => r.map((v, i) => (i === ci || fields[i].virtual ? v : conv(v)))),
+    };
+  } else {
+    state.view = { ...db, fields, rows };
+  }
 }
 
 let marksTimer = null;
@@ -882,7 +945,7 @@ async function marksChanged() {
 
 // ---------------------------------------------------------------- KORXONALAR paneli
 function companyGroups() {
-  const db = state.db;
+  const db = state.view;
   const ci = dbFieldIdx('korxonanomi', 'korxona');
   if (ci < 0) return null;
   const gi = dbFieldIdx('gurux', 'guruh');
@@ -920,7 +983,7 @@ function renderCompanies() {
   if (!state.db) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
   const data = companyGroups();
   if (!data) { box.innerHTML = '<p class="muted">Bazada korxona nomi ustuni topilmadi.</p>'; return; }
-  const ui = state.compUi, db = state.db;
+  const ui = state.compUi, db = state.view;
   const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
   const ti = dbFieldIdx('telefon');
   const all = data.list;
@@ -1131,6 +1194,7 @@ async function cloudSetup(code, token, remember) {
 }
 
 function renderCloud() {
+  renderHeader();
   const box = $('#cloud-box');
   const c = state.cloud;
   if (c.session) {
@@ -1237,6 +1301,16 @@ function renderCloud() {
 // ---------------------------------------------------------------- Ishga tushirish
 async function init() {
   document.querySelectorAll('.tab').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+  try { state.script = localStorage.getItem('script') || 'orig'; } catch (e) { /* ixtiyoriy */ }
+  const syncScriptBtns = () => document.querySelectorAll('[data-script]').forEach((b) => b.classList.toggle('on', b.dataset.script === state.script));
+  document.querySelectorAll('[data-script]').forEach((b) => (b.onclick = () => {
+    state.script = b.dataset.script;
+    try { localStorage.setItem('script', state.script); } catch (e) { /* ixtiyoriy */ }
+    syncScriptBtns();
+    onDbChanged();
+    toast(state.script === 'lat' ? "Lotin yozuvi (korxona nomlari o'zgarmaydi)" : state.script === 'cyr' ? "Кирилл ёзуви (korxona nomlari o'zgarmaydi)" : 'Asl holatda');
+  }));
+  syncScriptBtns();
   let tab = 'p-db';
   try { tab = localStorage.getItem('tab') || tab; } catch (e) { /* ixtiyoriy */ }
   if (!$('#' + tab)) tab = 'p-db';

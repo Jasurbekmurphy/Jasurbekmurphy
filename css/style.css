@@ -216,3 +216,99 @@ a { color: var(--accent); }
 .ct.sm { min-height: 28px; padding: 2px 10px; font-size: 12px; }
 table.stu td { vertical-align: middle; }
 table.stu td.wrap { white-space: normal; min-width: 150px; }
+
+/* ================= Yangi sarlavha va navigatsiya ================= */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo { width: 38px; height: 38px; border-radius: 11px; background: var(--accent); display: grid; place-items: center; flex: none; }
+.logo svg { width: 22px; height: 22px; fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-linejoin: round; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.brand-text b { font-size: 17px; }
+.brand-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.script { display: flex; padding: 3px; gap: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; flex: none; }
+.script button { min-height: 30px; padding: 2px 10px; border: 0; border-radius: 999px; background: transparent; font-size: 12px; font-weight: 700; color: var(--muted); }
+.script button.on { background: var(--accent); color: var(--accent-text); }
+
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 0;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 4px 4px max(4px, env(safe-area-inset-bottom)); box-shadow: 0 -4px 16px rgba(0,0,0,.06);
+}
+.tab {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  border: 0; background: none; border-radius: 12px; padding: 6px 2px; min-height: 54px;
+  color: var(--muted); font-size: 11px; font-weight: 600; border-bottom: 0;
+}
+.tab svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tab.active { color: var(--accent); background: var(--accent-soft); }
+main { padding-bottom: 96px; }
+.toast { bottom: 84px; }
+
+@media (min-width: 760px) {
+  .tabs {
+    position: sticky; top: 0; bottom: auto; box-shadow: none; border-top: 0; border-bottom: 1px solid var(--border);
+    justify-content: center; gap: 6px; padding: 8px 16px;
+  }
+  .tab { flex: 0 1 auto; flex-direction: row; gap: 8px; min-height: 40px; padding: 8px 16px; font-size: 14px; border-radius: 999px; }
+  .tab svg { width: 18px; height: 18px; }
+  main { padding-bottom: 32px; }
+  .toast { bottom: 24px; }
+}
+
+/* ================= Tahrirlash ================= */
+.checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 4px 0 12px; }
+.check-card {
+  display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; min-height: 64px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); justify-content: flex-start;
+}
+.check-card b { font-size: 24px; min-width: 28px; }
+.check-card span { font-size: 13px; line-height: 1.25; }
+.check-card small { color: var(--muted); }
+.check-card.good b { color: var(--ok); }
+.check-card.bad { border-color: var(--bad); } .check-card.bad b { color: var(--bad); }
+.check-card.warn { border-color: var(--warn); } .check-card.warn b { color: var(--warn); }
+.check-card.sel { box-shadow: 0 0 0 2px var(--accent) inset; }
+.ed-tools { display: flex; gap: 8px; margin-bottom: 8px; }
+.ed-tools input { flex: 1; min-width: 0; }
+.ed-tools button { flex: none; }
+.ed-list { display: flex; flex-direction: column; gap: 6px; }
+.ed-row {
+  display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; width: 100%;
+  padding: 10px 12px; border-radius: 10px; min-height: 52px;
+}
+.ed-row:hover { border-color: var(--accent); }
+.ed-name { font-weight: 600; }
+.ed-meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.flag { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; color: #fff; }
+.flag.bad { background: var(--bad); } .flag.warn { background: var(--warn); }
+.pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 10px; font-size: 13px; }
+.pager button { min-height: 36px; width: 44px; }
+
+dialog#dlg {
+  border: 0; padding: 0; border-radius: 16px; width: min(640px, calc(100% - 16px)); max-height: calc(100% - 32px);
+  background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+dialog#dlg::backdrop { background: rgba(0,0,0,.45); }
+.dlg-form { display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+.dlg-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.dlg-head h3 { margin: 0; flex: 1; font-size: 16px; }
+.dlg-body { padding: 12px 16px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.dlg-foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.dlg-foot .grow { flex: 1; }
+.fld input, .fld textarea { width: 100%; padding: 9px 10px; min-height: 42px; margin-top: 4px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.fld input.invalid { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+.jmsg { display: block; margin-top: 3px; font-size: 12px; } .jmsg.bad { color: var(--bad); }
+.sugg { display: flex; flex-direction: column; gap: 6px; }
+.sugg-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; }
+.sugg-row input { width: 18px; height: 18px; margin-top: 2px; flex: none; }
+code { font-size: 12px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.top { position: relative; z-index: 21; }
+.dlg-foot { flex-wrap: nowrap; }
+.dlg-foot button { flex: 1 1 0; padding: 10px 8px; }
+@media (max-width: 480px) { .dlg-foot .grow { display: none; } }
+@media (min-width: 481px) { .dlg-foot button { flex: 0 0 auto; padding: 10px 16px; } }

@@ -9,18 +9,27 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
   <header class="top">
-    <h1>Jadval Baza</h1>
-    <nav class="tabs">
-      <button class="tab" data-tab="p-db">Baza</button>
-      <button class="tab" data-tab="p-fill">To'ldirish</button>
-      <button class="tab" data-tab="p-table">Jadval</button>
-      <button class="tab" data-tab="p-comp">Korxonalar</button>
-    </nav>
+    <div class="brand">
+      <span class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg></span>
+      <div class="brand-text"><b>Jadval Baza</b><small id="hdr-sub">Baza bo'sh</small></div>
+    </div>
+    <div class="script" role="group" aria-label="Yozuv">
+      <button data-script="orig" title="Asl holatda">Asl</button>
+      <button data-script="lat" title="Lotin yozuvi">Lotin</button>
+      <button data-script="cyr" title="Кирилл ёзуви">Кирилл</button>
+    </div>
   </header>
+  <nav class="tabs" aria-label="Bo'limlar">
+    <button class="tab" data-tab="p-db"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.4 0 8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3V6c0-1.7 3.6-3 8-3zM4 6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span>Baza</span></button>
+    <button class="tab" data-tab="p-edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg><span>Tahrirlash</span></button>
+    <button class="tab" data-tab="p-fill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3zM14 3v4h4M9 13l2 2 4-4"/></svg><span>To'ldirish</span></button>
+    <button class="tab" data-tab="p-table"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg><span>Jadval</span></button>
+    <button class="tab" data-tab="p-comp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V7l6-3v17M10 21V9l10 3v9M3 21h18M7 10h0M7 14h0M14 15h2M14 18h2"/></svg><span>Korxonalar</span></button>
+  </nav>
 
   <main>
     <section class="panel" id="p-db">
@@ -40,6 +49,14 @@
       <div class="box" id="db-pending" hidden></div>
       <div class="box" id="cloud-box"></div>
       <p class="muted small privacy">🔒 Ma'lumotlar shu qurilmada saqlanadi. Bulut yoqilgan bo'lsa, faqat kod bilan shifrlangan holda yuboriladi. Internet bo'lmasa ham ishlaydi.</p>
+    </section>
+
+    <section class="panel" id="p-edit" hidden>
+      <div class="box">
+        <h2>Bazani tahrirlash</h2>
+        <p class="muted small">Imlo xatolarini tuzating, yangi o'quvchi qo'shing yoki o'chiring. Yuqoridagi kartochkalar bazadagi muammolarni ko'rsatadi, bosib ro'yxatini oching.</p>
+        <div id="edit-body"></div>
+      </div>
     </section>
 
     <section class="panel" id="p-fill" hidden>
@@ -72,13 +89,15 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="vendor/xlsx.full.min.js?v=4"></script>
-  <script src="vendor/jszip.min.js?v=4"></script>
-  <script src="js/match.js?v=4"></script>
-  <script src="js/xlsxfill.js?v=4"></script>
-  <script src="js/xlsxwrite.js?v=4"></script>
-  <script src="js/filters.js?v=4"></script>
-  <script src="js/sync.js?v=4"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="vendor/xlsx.full.min.js?v=5"></script>
+  <script src="vendor/jszip.min.js?v=5"></script>
+  <script src="js/match.js?v=5"></script>
+  <script src="js/xlsxfill.js?v=5"></script>
+  <script src="js/xlsxwrite.js?v=5"></script>
+  <script src="js/filters.js?v=5"></script>
+  <script src="js/sync.js?v=5"></script>
+  <script src="js/translit.js?v=5"></script>
+  <script src="js/edit.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>

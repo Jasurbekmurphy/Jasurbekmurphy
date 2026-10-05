@@ -116,7 +116,7 @@
     const fieldSelect = (fi, f) => `
       <select data-fi="${fi}" class="filter-field">
         <option value="">Ustunni tanlang…</option>
-        ${db.fields.map((x, i) => `<option value="${i}" ${f.field === i ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+        ${db.fields.map((x, i) => `<option value="${i}" ${f.field === i ? 'selected' : ''}>${esc(x.disp || x.label)}</option>`).join('')}
       </select>`;
 
     box.innerHTML = `
