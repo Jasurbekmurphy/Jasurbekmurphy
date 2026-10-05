@@ -95,8 +95,16 @@ function fieldScore(of, nf) {
     if (ka && kb) return 1;          // ikkalasi ham shu kalit
     if (ka !== kb) return 0;         // biri kalit, ikkinchisi emas — moslanmaydi
   }
-  return Match.similarity(of.name, nf.name);
+  // kirill/lotin farqlari: х/h, қ/q, е/ye, qo'sh harflar
+  const fold = (x) => x.replace(/h/g, 'x').replace(/q/g, 'k').replace(/ye/g, 'e').replace(/(.)\1+/g, '$1');
+  const fa = fold(a), fb = fold(b);
+  const sim = Math.max(Match.similarity(of.name, nf.name), Match.similarity(fa, fb));
+  if (fa === fb) return 1;
+  // Asosiy so'z bir xil bo'lsa (guruh, korxona, telefon...) — mos deb olinadi, eng o'xshashi tanlanadi
+  if (FIELD_WORDS.some((w) => fa.includes(w) && fb.includes(w))) return 0.8 + 0.2 * sim;
+  return sim;
 }
+const FIELD_WORDS = ['gurux', 'korxona', 'telefon', 'boskich', 'toifa', 'tugilgan', 'pasport', 'mfy', 'yonalis', 'talimsakl', 'usta', 'masul', 'buyruk', 'sartnoma'];
 
 function mapFields(oldDb, newDb) {
   const used = new Set();
@@ -112,7 +120,12 @@ function mapFields(oldDb, newDb) {
   });
 }
 
-function mergePlan(oldDb, newDb) {
+// Yangi faylni bazaga qo'shish rejasi.
+// opts.add = false: baza asosiy — faqat bazadagi o'quvchilar yangilanadi, bazada yo'qlari olinmaydi.
+// O'quvchi avval JShShIR, so'ng ism-familiya bo'yicha topiladi (kirill/lotin farqi va kichik xatolar hisobga olinadi).
+// Ism-familiya ustuni bazada o'zgartirilmaydi; boshqa ustunlar faqat mazmuni farq qilsa yangilanadi.
+function mergePlan(oldDb, newDb, opts = {}) {
+  const add = opts.add !== false;
   const map = mapFields(oldDb, newDb);
   const newFields = newDb.fields.filter((_, i) => map[i] < 0);
   const fields = oldDb.fields.concat(newFields.map((f) => ({ ...f, col: -1 })));
@@ -123,44 +136,93 @@ function mergePlan(oldDb, newDb) {
   const keyOf = (db, r) => rowKey(db, r);
   const index = new Map();
   rows.forEach((r, i) => { const k = keyOf(oldDb, r); if (k) index.set(k, i); });
-  // Zaxira: JShShIR bo'lmasa — ism-familiya bo'yicha (faqat bittasi mos kelsa)
+  const oJ = jIndex(oldDb), nJ = jIndex(newDb);
   const oName = oldDb.nameIdx, nName = newDb.nameIdx;
-  const byName = new Map();
-  if (oName >= 0) rows.forEach((r, i) => { const k = Match.nameKey(r[oName]); if (k) byName.set(k, byName.has(k) ? -1 : i); });
-  const nJ = jIndex(newDb);
+  const gField = (db) => db.fields.findIndex((f) => /gurux|guruh/.test(Match.canon(f.name)));
+  const oG = gField(oldDb), nG = gField(newDb);
+  // Ism-familiya indeksi
+  const toks = oName >= 0 ? rows.map((r) => Match.personTokens(r[oName])) : [];
+  const byPKey = new Map();
+  toks.forEach((t, i) => { const k = t.join(' '); if (k) { if (!byPKey.has(k)) byPKey.set(k, []); byPKey.get(k).push(i); } });
+  const sameGroup = (i, nr) => oG >= 0 && nG >= 0 && Match.norm(rows[i][oG]) && Match.norm(rows[i][oG]) === Match.norm(nr[nG]);
+  const used = new Set();
+
+  function findByName(nr) {
+    if (oName < 0 || nName < 0) return { at: undefined };
+    const t = Match.personTokens(nr[nName]);
+    if (t.length < 2) return { at: undefined };
+    let c = (byPKey.get(t.join(' ')) || []).filter((i) => !used.has(i));
+    if (c.length > 1) { const g = c.filter((i) => sameGroup(i, nr)); if (g.length) c = g; }
+    if (c.length === 1) return { at: c[0], exact: true };
+    if (c.length > 1) return { at: undefined, ambiguous: c };
+    let best = -1, bs = 0, second = 0;
+    toks.forEach((tk, i) => {
+      if (used.has(i)) return;
+      let sc = Match.personScore(t, tk);
+      if (!sc) return;
+      if (sameGroup(i, nr)) sc += 0.03;
+      if (sc > bs) { second = bs; bs = sc; best = i; } else if (sc > second) second = sc;
+    });
+    if (best >= 0 && bs >= 0.88 && bs - second >= 0.04) return { at: best, score: bs };
+    return { at: undefined, near: best >= 0 && bs >= 0.8 ? best : -1 };
+  }
+
   let added = 0, updatedRows = 0, updatedCells = 0, byNameN = 0;
-  const changes = [], addedNames = [];
+  const changes = [], addedNames = [], skipped = [], fuzzy = [];
   for (const nr of newDb.rows) {
     const k = keyOf(newDb, nr);
     let at = k ? index.get(k) : undefined;
-    const noJ = nJ < 0 || !Match.digits(nr[nJ]);
-    if (at === undefined && noJ && nName >= 0) {
-      const hit = byName.get(Match.nameKey(nr[nName]));
-      if (hit != null && hit >= 0) { at = hit; byNameN++; }
+    if (at !== undefined && used.has(at)) continue; // faylda takror
+    let how = 'j';
+    if (at === undefined) {
+      const fileJ = nJ >= 0 ? Match.digits(nr[nJ]) : '';
+      const r = findByName(nr);
+      // Faylda to'g'ri JShShIR bor, bazadagisi boshqa: faqat ism to'liq mos bo'lsa
+      if (r.at !== undefined && fileJ.length === 14 && oJ >= 0) {
+        const dbJ = Match.digits(rows[r.at][oJ]);
+        if (dbJ.length === 14 && dbJ !== fileJ && !r.exact) r.at = undefined;
+      }
+      at = r.at;
+      how = r.exact ? 'name' : 'fuzzy';
+      if (at === undefined && !add) {
+        if (skipped.length < 300) skipped.push({ name: nName >= 0 ? nr[nName] : k, near: r.near >= 0 ? rows[r.near][oName] : r.ambiguous ? `${r.ambiguous.length} ta bir xil ism` : '' });
+        else skipped.push({});
+        continue;
+      }
     }
     if (at === undefined) {
       const row = Array(width).fill(null);   // faylda yo'q ustunlar bo'sh qoladi
       nr.forEach((v, i) => { row[target[i]] = v; });
       rows.push(row);
       if (k) index.set(k, rows.length - 1);
+      used.add(rows.length - 1);
       added++;
       if (addedNames.length < 300) addedNames.push(nName >= 0 ? nr[nName] : k);
       continue;
     }
+    used.add(at);
+    if (how !== 'j') byNameN++;
     const row = rows[at];
+    if (how === 'fuzzy' && fuzzy.length < 300 && oName >= 0) fuzzy.push({ from: nr[nName], to: row[oName] });
     let n = 0;
     nr.forEach((v, i) => {
       if (v == null || String(v).trim() === '') return;   // bo'sh qiymat bazadagini o'chirmaydi
       const t = target[i];
-      if (String(row[t] ?? '') !== String(v)) {
-        if (changes.length < 300) changes.push({ name: row[oName >= 0 ? oName : 0], field: fields[t].label, from: row[t], to: v });
-        row[t] = v; n++;
-      }
+      if (t === oName && i === nName) return;              // ism-familiya bazadagicha qoladi
+      if (!add && t >= oldDb.fields.length) return;        // bazada yo'q ustun olinmaydi
+      const old = row[t];
+      if (String(old ?? '') === String(v)) return;
+      if (old != null && Match.norm(old) === Match.norm(v) && Match.norm(v)) return; // faqat yozuv (kirill/lotin) farqi
+      if (changes.length < 300) changes.push({ name: row[oName >= 0 ? oName : 0], field: fields[t].label, from: old, to: v });
+      row[t] = v; n++;
     });
     if (n) { updatedRows++; updatedCells += n; }
   }
   const mapping = newDb.fields.map((f, i) => ({ from: f.label, to: map[i] >= 0 ? oldDb.fields[map[i]].label : null }));
-  return { db: { ...oldDb, fields, rows }, added, updatedRows, updatedCells, newFields, changes, addedNames, mapping, byNameN };
+  const keepFields = add ? fields : fields.slice(0, oldDb.fields.length);
+  const outRows = add ? rows : rows.map((r) => r.slice(0, oldDb.fields.length));
+  return { db: { ...oldDb, fields: keepFields, rows: outRows }, added, updatedRows, updatedCells, newFields: add ? newFields : [], ignoredFields: add ? [] : newFields,
+    changes, addedNames, mapping, byNameN, skipped, fuzzy, matched: used.size - added };
 }
 
 // ---------------------------------------------------------------- TAHRIRLASH paneli (Excel'ga o'xshash jadval)

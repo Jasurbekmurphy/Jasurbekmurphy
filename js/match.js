@@ -68,7 +68,48 @@
 
   // Ism-familiyani solishtirish uchun kalit
   function nameKey(s) { return norm(s); }
+
+  // ---- Shaxs ism-familiyasi: kirill/lotin va yozilishdagi farqlarga chidamli solishtirish
+  const PMAP = { ...MAP, ў: 'o', ғ: 'g', қ: 'k', ҳ: 'x', ц: 's', е: 'e', ё: 'yo', ю: 'yu', я: 'ya', й: 'y', ы: 'i' };
+  const SUFFIX = new Set(['qizi', 'kizi', 'kizy', 'qizy', 'ogli', 'ugli', 'ogly', 'ugly', 'oglu', 'uglu']);
+  function personTokens(s) {
+    if (s == null) return [];
+    let t = '';
+    for (const ch of String(s).toLowerCase()) t += ch in PMAP ? PMAP[ch] : ch;
+    t = t.replace(/[’‘ʻʼ'`´]/g, '').replace(/[^a-z]+/g, ' ');
+    return t.split(' ').filter(Boolean).map((w) => w
+      .replace(/q/g, 'k').replace(/h/g, 'x').replace(/w/g, 'v')
+      .replace(/(dj|zh)/g, 'j').replace(/ts/g, 's').replace(/ye/g, 'e').replace(/iy/g, 'i').replace(/yu/g, 'u').replace(/yo/g, 'o')
+      .replace(/(.)\1+/g, '$1'))
+      .filter((w) => !SUFFIX.has(w));
+  }
+  const personKey = (s) => personTokens(s).join(' ');
+
+  function lev(a, b) {
+    if (a === b) return 0;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  const wsim = (a, b) => (a && b ? 1 - lev(a, b) / Math.max(a.length, b.length) : 0);
+
+  // 0..1: familiya va ism majburiy mos bo'lishi kerak, otasining ismi qo'shimcha
+  function personScore(a, b) {
+    const x = Array.isArray(a) ? a : personTokens(a), y = Array.isArray(b) ? b : personTokens(b);
+    if (x.length < 2 || y.length < 2) return x.length && x.join(' ') === y.join(' ') ? 1 : 0;
+    const f = wsim(x[0], y[0]), i = wsim(x[1], y[1]);
+    if (f < 0.75 || i < 0.75) return 0;
+    if (x.length > 2 && y.length > 2) {
+      const o = wsim(x.slice(2).join(''), y.slice(2).join(''));
+      return 0.4 * f + 0.4 * i + 0.2 * o;
+    }
+    return 0.5 * f + 0.5 * i - (x.length !== y.length ? 0.02 : 0); // otasining ismi bittasida yo'q
+  }
   function digits(s) { return s == null ? '' : String(s).replace(/\D+/g, ''); }
 
-  g.Match = { norm, canon, similarity, nameKey, digits, THRESHOLD: 0.6 };
+  g.Match = { norm, canon, similarity, nameKey, digits, personTokens, personKey, personScore, THRESHOLD: 0.6 };
 })(typeof window !== 'undefined' ? window : globalThis);

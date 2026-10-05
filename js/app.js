@@ -291,7 +291,7 @@ async function onMasterFile(file, mode) {
   try {
     const buf = await readFile(file);
     const parsed = parseMaster(buf);
-    state.pending = { ...parsed, fileName: file.name, file: buf, mode: state.db ? mode : 'replace' };
+    state.pending = { ...parsed, fileName: file.name, file: buf, mode: state.db ? 'update' : 'replace' };
     renderPending();
     showTab('p-db');
     setTimeout(() => $('#db-pending').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -306,7 +306,7 @@ function renderPending() {
   const box = $('#db-pending');
   if (!p) { box.hidden = true; return; }
   box.hidden = false;
-  if (!p.mode) p.mode = state.db ? 'merge' : 'replace';
+  if (!p.mode) p.mode = state.db ? 'update' : 'replace';
   const nm = (db, r) => esc(r[db.nameIdx >= 0 ? db.nameIdx : 0] ?? '');
 
   // Imlo tekshiruvi (yuklashda avtomatik tuzatiladi)
@@ -335,25 +335,31 @@ function renderPending() {
   if (state.db) {
     modeHtml = `
       <div class="seg wide" id="pending-mode">
-        <button data-m="merge" class="${p.mode === 'merge' ? 'on' : ''}">Birlashtirish (qo'shish)</button>
+        <button data-m="update" class="${p.mode === 'update' ? 'on' : ''}">Bazani yangilash</button>
+        <button data-m="merge" class="${p.mode === 'merge' ? 'on' : ''}">Yangilash + qo'shish</button>
         <button data-m="replace" class="${p.mode === 'replace' ? 'on' : ''}">To'liq almashtirish</button>
       </div>
-      <p class="hint small">${p.mode === 'merge'
-        ? "Yangi o'quvchilar qo'shiladi, borlarining ma'lumoti yangilanadi. Bazadagi hech kim o'chirilmaydi, ilovada qilingan tahrirlar saqlanadi."
+      <p class="hint small">${p.mode === 'update'
+        ? "Baza asosiy: fayldagi o'quvchilar bazadan topiladi (JShShIR yoki ism-familiya bo'yicha, kirill/lotin farqi hisobga olinadi) va ularning ma'lumoti fayldagi bilan to'g'rilanadi. Bazada yo'q o'quvchilar va ustunlar olinmaydi. Ism-familiya bazadagicha qoladi."
+        : p.mode === 'merge'
+        ? "Bazadagilar yangilanadi, bazada yo'q o'quvchilar ham qo'shiladi. Hech kim o'chirilmaydi."
         : "Baza butunlay shu fayl bilan almashtiriladi. Faylda yo'q o'quvchilar o'chadi, ilovada qilingan tahrirlar yo'qoladi."}</p>`;
-    if (p.mode === 'merge') {
-      const plan = mergePlan(state.db, fixedP);
+    if (p.mode === 'update' || p.mode === 'merge') {
+      const plan = mergePlan(state.db, fixedP, { add: p.mode === 'merge' });
       p.plan = plan;
+      const upd = p.mode === 'update';
       planHtml = `
         <div class="stats">
-          <div class="ok"><b>+${plan.added}</b><span>yangi o'quvchi</span></div>
+          ${upd ? `<div class="ok"><b>${plan.matched}</b><span>bazadan topildi</span></div>` : `<div class="ok"><b>+${plan.added}</b><span>yangi o'quvchi</span></div>`}
           <div class="warn"><b>${plan.updatedRows}</b><span>yangilanadi (${plan.updatedCells} katak)</span></div>
-          <div><b>${plan.db.rows.length}</b><span>jami bo'ladi</span></div>
+          ${upd ? `<div class="${plan.skipped.length ? 'bad' : ''}"><b>${plan.skipped.length}</b><span>bazada yo'q — olinmaydi</span></div>` : `<div><b>${plan.db.rows.length}</b><span>jami bo'ladi</span></div>`}
         </div>
         <details ${plan.newFields.length ? 'open' : ''}><summary>Ustunlar mosligi (fayl → baza)</summary>
-          <ul class="small maplist-mini">${plan.mapping.map((m) => `<li>${esc(m.from)} → ${m.to ? `<b>${esc(m.to)}</b>` : '<span class="warn">yangi ustun sifatida qo\'shiladi</span>'}</li>`).join('')}</ul>
+          <ul class="small maplist-mini">${plan.mapping.map((m) => `<li>${esc(m.from)} → ${m.to ? `<b>${esc(m.to)}</b>` : upd ? '<span class="muted">bazada yo\'q — olinmaydi</span>' : '<span class="warn">yangi ustun sifatida qo\'shiladi</span>'}</li>`).join('')}</ul>
         </details>
         ${plan.byNameN ? `<p class="small muted">${plan.byNameN} ta o'quvchi JShShIR'siz — ism-familiya bo'yicha topildi.</p>` : ''}
+        ${plan.fuzzy.length ? `<details><summary>Ism-familiya o'xshashligi bo'yicha topilganlar (${plan.fuzzy.length}) — tekshirib ko'ring</summary><ul class="small">${plan.fuzzy.map((f) => `<li>${esc(f.from ?? '')} → <b>${esc(f.to ?? '')}</b></li>`).join('')}</ul></details>` : ''}
+        ${plan.skipped.length ? `<details><summary class="bad">Bazada topilmadi — olinmaydi (${plan.skipped.length})</summary><ul class="small">${plan.skipped.filter((x) => x.name != null).map((x) => `<li>${esc(x.name)}${x.near ? ` <span class="muted">(o'xshashi: ${esc(x.near)})</span>` : ''}</li>`).join('')}</ul></details>` : ''}
         ${plan.addedNames.length ? `<details><summary>Yangi qo'shiladigan o'quvchilar (${plan.added})</summary><ul class="small">${plan.addedNames.map((n) => `<li>${esc(n ?? '')}</li>`).join('')}</ul>
           <p class="small muted">Faylda yo'q ustunlar (guruh, telefon va h.k.) bo'sh qoladi — keyin Tahrirlash bo'limida to'ldirasiz.</p></details>` : ''}
         ${plan.changes.length ? `<details ${plan.changes.length <= 30 ? 'open' : ''}><summary>Yangilanadigan qiymatlar (${plan.updatedCells})</summary><ul class="difflist">${plan.changes.slice(0, 100).map((c) =>
@@ -384,7 +390,7 @@ function renderPending() {
     ${modeHtml}
     ${planHtml}
     <div class="row-btns">
-      <button class="primary" id="pending-save">${!state.db ? 'Bazaga saqlash' : p.mode === 'merge' ? 'Bazaga qo\'shish' : 'Bazani almashtirish'}</button>
+      <button class="primary" id="pending-save">${!state.db ? 'Bazaga saqlash' : p.mode === 'update' ? 'Bazani yangilash' : p.mode === 'merge' ? 'Bazaga qo\'shish' : 'Bazani almashtirish'}</button>
       <button id="pending-cancel">Bekor qilish</button>
     </div>`;
   $('#pending-sheet').onchange = (e) => {
@@ -401,8 +407,8 @@ function renderPending() {
     if (p.spellFix) {
       for (const it of Spell.scan(p)) p.rows[it.ri][it.fi] = it.to;
     }
-    if (state.db && p.mode === 'merge') {
-      p.plan = mergePlan(state.db, p);
+    if (state.db && (p.mode === 'merge' || p.mode === 'update')) {
+      p.plan = mergePlan(state.db, p, { add: p.mode === 'merge' });
       db = { ...p.plan.db, fileName: p.fileName, file: p.file, importedAt: Date.now() };
     } else {
       db = { ...p, importedAt: Date.now() };
