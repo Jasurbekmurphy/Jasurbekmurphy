@@ -16,7 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/Jasurbekmurphy/Jasurbekmurphy/claud
 
 Skript bot tokenini so'raydi va qolgan hammasini (Node.js, bot, avtomatik ishga tushish,
 HTTPS, firewall) o'zi sozlaydi. Oxirida saytga kiritiladigan **manzil** va **kalit**ni chiqaradi.
-Botni yangilash uchun ham shu buyruqni qayta bajaring.
+Bot GitHub'dagi o'zgarishlardan keyin **5 daqiqa ichida o'zi yangilanadi** (yangi versiya
+avval tekshiriladi; ishlamasa eski versiyaga qaytadi). Darhol yangilash: `sudo /opt/jadval-bot/update.sh`.
 
 Quyida — xuddi shu ishlarni qo'lda bajarish.
 
@@ -110,7 +111,8 @@ Saytda **Mas'ul va davomat → ⚙️ Bot**:
 |---|---|
 | Qayta ishga tushirish | `sudo systemctl restart jadval-bot` |
 | Loglar | `journalctl -u jadval-bot -n 100` |
-| Botni yangilash | 2-qadamdagi `for … curl` qatorini qayta bajaring, keyin `restart` |
+| Botni darhol yangilash | `sudo /opt/jadval-bot/update.sh` (aks holda 5 daqiqada o'zi yangilanadi) |
+| Yangilanish loglari | `journalctl -u jadval-bot-update -n 50` |
 | Bazadan nusxa | `sudo cp /opt/jadval-bot/davomat.db ~/davomat-$(date +%F).db` |
 
 ## Docker bo'lsa (ixtiyoriy, 1–3-qadamlar o'rniga)

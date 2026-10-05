@@ -122,6 +122,71 @@ systemctl is-active --quiet $SVC || { journalctl -u $SVC -n 30 --no-pager; die "
 curl -fsS -m 5 "http://127.0.0.1:$PORT/" >/dev/null || die "Bot porti javob bermayapti"
 ok "Bot ishlayapti (Telegram: @$BOTNAME)"
 
+# ---------------------------------------------------------------- 4b. Avtomatik yangilanish
+say "Avtomatik yangilanish sozlanmoqda (har 5 daqiqada GitHub tekshiriladi)…"
+cat > "$DIR/update.sh" <<'UPD'
+#!/usr/bin/env bash
+# GitHub'dagi yangi versiyani tekshiradi; o'zgargan bo'lsa — tekshirib, o'rnatib, botni qayta ishga tushiradi.
+# Yangi versiya ishlamasa — eski versiyaga qaytadi.
+set -uo pipefail
+DIR=/opt/jadval-bot
+REPO_RAW=$(cat "$DIR/.repo_raw")
+SVC=jadval-bot
+FILES="worker.js server.js package.json"
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+for f in $FILES; do
+  curl -fsSL -m 30 "$REPO_RAW/$f?t=$(date +%s)" -o "$TMP/$f" || { echo "yuklab bo'lmadi: $f"; exit 0; }
+done
+changed=0
+for f in $FILES; do cmp -s "$TMP/$f" "$DIR/$f" || changed=1; done
+[ $changed -eq 1 ] || exit 0
+for f in worker.js server.js; do
+  node --check "$TMP/$f" 2>/dev/null || { echo "yangi $f da xato — o'rnatilmadi"; exit 0; }
+done
+mkdir -p "$DIR/prev"
+for f in $FILES; do cp -f "$DIR/$f" "$DIR/prev/$f" 2>/dev/null || true; cp -f "$TMP/$f" "$DIR/$f"; done
+chown -R jadvalbot:jadvalbot "$DIR"
+systemctl restart "$SVC"; sleep 4
+if systemctl is-active --quiet "$SVC" && curl -fsS -m 5 http://127.0.0.1:8787/ >/dev/null; then
+  echo "bot yangilandi: $(date '+%F %T')"
+else
+  echo "yangi versiya ishlamadi — eski versiyaga qaytildi"
+  for f in $FILES; do cp -f "$DIR/prev/$f" "$DIR/$f"; done
+  chown -R jadvalbot:jadvalbot "$DIR"; systemctl restart "$SVC"
+fi
+# skriptning o'zini ham yangilab qo'yish
+curl -fsSL -m 30 "$REPO_RAW/install.sh" -o "$TMP/install.sh" 2>/dev/null && \
+  sed -n '/^cat > "\$DIR\/update.sh" <<.UPD.$/,/^UPD$/p' "$TMP/install.sh" | sed '1d;$d' > "$TMP/update.sh" && \
+  bash -n "$TMP/update.sh" && [ -s "$TMP/update.sh" ] && ! cmp -s "$TMP/update.sh" "$DIR/update.sh" && cp -f "$TMP/update.sh" "$DIR/update.sh" && chmod 755 "$DIR/update.sh"
+exit 0
+UPD
+echo "$REPO_RAW" > "$DIR/.repo_raw"
+chmod 755 "$DIR/update.sh"
+cat > /etc/systemd/system/$SVC-update.service <<EOF
+[Unit]
+Description=Jadval Baza botini GitHub'dan yangilash
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$DIR/update.sh
+EOF
+cat > /etc/systemd/system/$SVC-update.timer <<EOF
+[Unit]
+Description=Jadval Baza botini har 5 daqiqada yangilash
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now $SVC-update.timer >/dev/null 2>&1
+ok "Avtomatik yangilanish yoqildi (log: journalctl -u $SVC-update)"
+
 # ---------------------------------------------------------------- 5. HTTPS (Caddy)
 busy=$(ss -ltnp 2>/dev/null | grep -E ':(80|443)\s' | grep -v caddy || true)
 if [ -n "$busy" ]; then
@@ -169,3 +234,4 @@ echo
 echo -e "   Telegram bot: ${B}https://t.me/$BOTNAME${N}  — havolani mas'ullarga yuboring"
 echo -e "${G}══════════════════════════════════════════════════════════${N}"
 echo "Loglar: journalctl -u $SVC -f    Qayta ishga tushirish: systemctl restart $SVC"
+echo "Bot GitHub'dagi o'zgarishlardan keyin 5 daqiqa ichida o'zi yangilanadi (hozir: sudo $DIR/update.sh)."
