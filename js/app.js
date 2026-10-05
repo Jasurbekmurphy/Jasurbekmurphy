@@ -980,16 +980,37 @@ function isInstitutionName(name) {
   const c = Match.canon(name);
   return c.includes('talimmuassasa') || c.includes('oquvmuassasa') || c.includes('talimmassasa');
 }
-function inInstitution(row) {
-  const cfi = dbFieldIdx('korxonanomi', 'korxona');
-  if (cfi >= 0 && row[cfi] != null && isInstitutionName(row[cfi])) return true;
-  const ti = dbFieldIdx('toifasi');
-  return ti >= 0 && row[ti] != null && /^\s*3\s*[-–]?\s*(тоифа|toifa)/i.test(String(row[ti]));
+// Korxonasi yo'q o'quvchilar — 4-toifa (ta'lim muassasasidagilar bilan aralashtirilmaydi)
+const CAT4_LABEL = '4-toifa';
+function isNoCompanyName(name) {
+  if (name == null) return true;
+  const c = Match.canon(name);
+  return !c || ['yoq', 'yuq', 'mavjudemas', 'biriktirilmagan', 'korxonasiz', 'yoqbiriktirilmagan', 'korxonayoq', 'korxonaga biriktirilmagan'].includes(c) ||
+    c.includes('biriktirilmagan') || /^[-—–.]+$/.test(String(name).trim());
 }
+// Toifa: 'inst' — ta'lim muassasasida (3-toifa), 'cat4' — korxonasiz (4-toifa), '' — korxonada
+function studentCategory(row) {
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
+  if (cfi >= 0) {
+    if (row[cfi] != null && String(row[cfi]).trim() && isInstitutionName(row[cfi])) return 'inst';
+    if (isNoCompanyName(row[cfi])) return 'cat4';
+  }
+  const ti = dbFieldIdx('toifasi');
+  const t = ti >= 0 && row[ti] != null ? String(row[ti]) : '';
+  if (/^\s*3\s*[-–]?\s*(тоифа|toifa)/i.test(t)) return 'inst';
+  if (/^\s*4\s*[-–]?\s*(тоифа|toifa)/i.test(t)) return 'cat4';
+  return '';
+}
+function inInstitution(row) { return studentCategory(row) === 'inst'; }
+const naLabel = (sc) => (sc.src === 'cat4' ? CAT4_LABEL : INST_LABEL);
+const naBadge = (sc) => (sc.src === 'cat4' ? '<span class="cat4-badge">4-toifa</span>' : '<span class="inst-badge">🎓 O\'qishda</span>');
 
-// O'quvchi shartnomasi: odatiy holatda "yo'q", foydalanuvchi o'zi "bor" qilib belgilaydi
+// O'quvchi shartnomasi: odatiy holatda "yo'q", foydalanuvchi o'zi "bor" qilib belgilaydi.
+// Ta'lim muassasasidagilar (3-toifa) va korxonasizlar (4-toifa) uchun talab qilinmaydi.
 function studentContract(row) {
-  if (inInstitution(row)) return { on: false, na: true, src: 'inst' };
+  const cat = studentCategory(row);
+  if (cat === 'inst') return { on: false, na: true, src: 'inst' };
+  if (cat === 'cat4') return { on: false, na: true, src: 'cat4' };
   const k = studentKey(row);
   if (k in state.marks.stu) return { on: !!state.marks.stu[k], src: 'mark' };
   return { on: false, src: 'default' };
@@ -1005,9 +1026,9 @@ function computeView() {
     { col: -1, name: "Korxona buyrug'i", label: "Korxona buyrug'i (+/−)", virtual: true },
   ]);
   const rows = db.rows.map((r) => r.concat([
-    ci >= 0 && r[ci] != null ? (isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
-    (() => { const sc = studentContract(r); return sc.na ? INST_LABEL : sc.on ? '+' : '−'; })(),
-    ci >= 0 && r[ci] != null ? (isInstitutionName(r[ci]) ? INST_LABEL : companyOrder(r[ci]) ? '+' : '−') : null,
+    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
+    (() => { const sc = studentContract(r); return sc.na ? naLabel(sc) : sc.on ? '+' : '−'; })(),
+    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyOrder(r[ci]) ? '+' : '−') : null,
   ]));
   // Kirill/lotin: korxona nomi ustunidan boshqa hamma matn o'giriladi
   const sc = state.script;
@@ -1047,7 +1068,7 @@ function companyGroups() {
   const map = new Map();
   for (const r of db.rows) {
     const name = r[ci];
-    if (name == null || String(name).trim() === '') continue;
+    if (isNoCompanyName(name)) continue; // korxonasiz — 4-toifa
     const k = companyKey(name);
     if (!k) continue;
     if (!map.has(k)) map.set(k, { key: k, names: new Map(), rows: [], people: new Map(), masters: new Map() });
@@ -1111,6 +1132,7 @@ function renderCompanies() {
   const orderWith = all.filter((c) => c.order).length;
   const instN = all.filter((c) => c.inst).reduce((n, c) => n + c.rows.length, 0) + all.filter((c) => !c.inst).reduce((n, c) => n + c.rows.length - c.need, 0);
   const realComps = all.filter((c) => !c.inst).length;
+  const cat4N = db.rows.filter((r) => (!ui.group || String(r[gi] ?? '').trim() === ui.group) && studentCategory(r) === 'cat4').length;
 
   // Guruh tanlanganda: o'quvchilar ro'yxati (+/− belgilash uchun eng qulay ko'rinish)
   const groupList = () => {
@@ -1136,10 +1158,10 @@ function renderCompanies() {
           return `<tr>
             <td>${i + 1}</td>
             <td class="wrap"><b>${esc(r[nameIdx])}</b></td>
-            <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
-            <td class="wrap">${comp ? esc(comp) : '<span class="muted">—</span>'}</td>
-            <td>${instC ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
-            <td>${instC ? '' : comp ? `<button class="ct sm ${co ? 'on' : ''}" data-okey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${co ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${sc.na ? naBadge(sc) : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
+            <td class="wrap">${isNoCompanyName(comp) ? '<span class="cat4-badge">4-toifa · korxonasiz</span>' : esc(comp)}</td>
+            <td>${instC ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : !isNoCompanyName(comp) ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${instC ? '' : !isNoCompanyName(comp) ? `<button class="ct sm ${co ? 'on' : ''}" data-okey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${co ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
           </tr>`;
         }).join('') || '<tr><td colspan="6" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
       </table></div>`;
@@ -1161,6 +1183,7 @@ function renderCompanies() {
       <div class="ok"><b>${orderWith}</b><span>📋 korxona buyrug'i</span></div>
       <div class="${stuWith < students ? 'warn' : 'ok'}"><b>${stuWith}/${students}</b><span>o'quvchi shartnomasi</span></div>
       ${instN ? `<div><b>${instN}</b><span>🎓 ta'lim muassasasida</span></div>` : ''}
+      ${cat4N ? `<div class="c4"><b>${cat4N}</b><span>4-toifa (korxonasiz)</span></div>` : ''}
     </div>
     <input type="search" id="comp-q" placeholder="Korxona yoki o'quvchi nomi…" value="${esc(ui.q)}">
     <div class="seg wide" id="comp-show">
@@ -1207,7 +1230,7 @@ function renderCompanies() {
             <thead><tr><th>№</th><th>F.I.Sh</th><th>Shartnoma</th><th>Guruh</th><th>Telefon</th></tr></thead>
             <tbody>${shown.map((r, i) => { const sc = studentContract(r); return `<tr>
               <td>${i + 1}</td><td class="wrap">${esc(r[nameIdx])}</td>
-              <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
+              <td>${sc.na ? naBadge(sc) : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
               <td>${esc(data.gi >= 0 ? r[data.gi] ?? '' : '')}</td><td>${esc(ti >= 0 ? r[ti] ?? '' : '')}</td>
             </tr>`; }).join('')}</tbody>
           </table></div>
@@ -1273,7 +1296,7 @@ function renderCompanies() {
   }));
   box.querySelectorAll('[data-xlcomp]').forEach((b) => (b.onclick = async () => {
     const c = byKey(b.dataset.xlcomp);
-    const rows = shownOf(c).map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, (studentContract(r).na ? INST_LABEL : studentContract(r).on ? '+' : '−')]);
+    const rows = shownOf(c).map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, (studentContract(r).na ? naLabel(studentContract(r)) : studentContract(r).on ? '+' : '−')]);
     const blob = await XlsxWrite.buildWorkbook({ title: c.name + ' — o\'quvchilar', sheetName: 'O\'quvchilar', headers: ['№', 'F.I.Sh', 'Guruh', 'Telefon', "O'quvchi shartnomasi"], rows });
     downloadBlob(blob, c.name.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60) + '.xlsx');
   }));

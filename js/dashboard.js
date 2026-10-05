@@ -116,8 +116,9 @@ function renderDashboard() {
   const compWith = compList.filter((c) => c.contract).length;
   const orderWith = compList.filter((c) => c.order).length;
   const stuWith = raw.filter((r) => studentContract(r).on).length;
-  const instN = raw.filter((r) => studentContract(r).na).length;
-  const need = total - instN;
+  const instN = raw.filter((r) => studentContract(r).src === 'inst').length;
+  const cat4N = raw.filter((r) => studentContract(r).src === 'cat4').length;
+  const need = total - instN - cat4N;
   const iss = jshshirIssues(state.db);
   const spellN = Spell.scan(state.db).length;
   const problems = iss.bad.length + iss.dups.length;
@@ -129,7 +130,8 @@ function renderDashboard() {
     stays != null && kpi({ id: 'stay', label: 'Korxonada ishda qoladi', icon: '🏭', value: stays, of: total, pct: pct(stays), sub: `${Math.round(pct(stays))}%` }),
     comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `🤝 hamkorlik: ${compWith} · 📋 buyruq: ${orderWith}`, pct: compN ? (compWith / compN) * 100 : 0 }),
     kpi({ id: 'stuc', label: "O'quvchi shartnomasi", icon: '📄', value: stuWith, of: need, pct: need ? (stuWith / need) * 100 : 0,
-      sub: `${need - stuWith} ta o'quvchida yo'q` + (instN ? ` · 🎓 ${instN} ta ta'lim muassasasida` : ''), status: stuWith === need ? 'ok' : 'warn' }),
+      sub: `${need - stuWith} ta o'quvchida yo'q` + (instN ? ` · 🎓 ${instN} ta ta'lim muassasasida` : '') + (cat4N ? ` · ${cat4N} ta 4-toifa` : ''), status: stuWith === need ? 'ok' : 'warn' }),
+    cat4N ? kpi({ id: 'cat4', label: '4-toifa (korxonasiz)', icon: '🚫', value: cat4N, of: total, pct: pct(cat4N), sub: "korxonaga biriktirilmagan o'quvchilar · bosib ro'yxatni oching", status: 'warn' }) : null,
     kpi({ id: 'issues', label: "Ma'lumotdagi xatolar", icon: problems ? '⚠️' : '✓', value: problems, status: problems ? 'bad' : 'ok',
       sub: (problems ? `JShShIR xato: ${iss.bad.length} · dublikat: ${iss.dups.length}` : 'JShShIR hammasi to\'g\'ri') + (spellN ? ` · ✍️ imlo: ${spellN}` : '') }),
   ].filter(Boolean);
@@ -211,6 +213,7 @@ function renderDashboard() {
       if (i >= 0) openTableWith(stay, String(state.view.rows[i][stay]));
     }
     else if (id === 'comp') showTab('p-comp');
+    else if (id === 'cat4') openTableWith(state.view.fields.findIndex((f) => f.virtual && f.name === "O'quvchi shartnomasi"), '4-toifa');
     else if (id === 'stuc') openTableWith(state.view.fields.findIndex((f) => f.virtual && f.name === "O'quvchi shartnomasi"), '−');
     else if (id === 'issues') { editUi.mode = iss.bad.length ? 'bad' : iss.dups.length ? 'dup' : 'all'; renderEdit(); showTab('p-edit'); }
     else showTab('p-table');
