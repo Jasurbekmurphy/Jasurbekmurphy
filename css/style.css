@@ -491,3 +491,12 @@ table.glist td.wrap { white-space: normal; }
 .comp.inst { border-left-color: #4a6fd1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .inst-badge { background: #1b2847; color: #a9bff5; } }
 .maplist-mini { margin: 6px 0; padding-left: 18px; } .maplist-mini li { margin: 2px 0; }
+
+/* ---------- Telefonda sahifa kengayib ketmasligi uchun ---------- */
+/* Izoh yorlig'i faqat sichqoncha ustiga borganda chiziladi va diagramma ichida qoladi */
+.bar-row .tip { display: none; left: auto; right: 0; max-width: min(340px, 92%); white-space: normal; opacity: 1; }
+.bar-row:hover .tip, .bar-row:focus-visible .tip { display: block; }
+@media (hover: none) { .bar-row:hover .tip, .bar-row:focus-visible .tip { display: none; } }
+/* Har qanday tasodifiy keng element sahifani kengaytirmasin (sticky ishlashi saqlanadi) */
+html, body { overflow-x: clip; }
+.main { overflow-x: clip; }
