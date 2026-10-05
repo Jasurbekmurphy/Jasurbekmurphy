@@ -1,4 +1,4 @@
-/* global state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
+/* global Filters, state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
 'use strict';
 // Bazani ilovaning o'zida tahrirlash, tekshiruv (JShShIR), korxona nomlarini tartiblash,
 // va yangi jadvalni bazaga birlashtirish (merge).
@@ -139,7 +139,7 @@ function mergePlan(oldDb, newDb) {
 }
 
 // ---------------------------------------------------------------- TAHRIRLASH paneli (Excel'ga o'xshash jadval)
-const editUi = { q: '', mode: 'all', page: 0, cols: null, colsOpen: false };
+const editUi = { q: '', mode: 'all', page: 0, cols: null, colsOpen: false, filters: [], filterOpen: false, bulkField: '', bulkVal: '' };
 
 function defaultEditCols(db) {
   const find = (...k) => db.fields.findIndex((f) => k.some((x) => Match.canon(f.name).includes(x)));
@@ -173,68 +173,71 @@ function renderIssueTabs() {
   $('#ed-comp').onclick = openCompanyDialog;
 }
 
+// Joriy filtr/qidiruv/rejimga mos qatorlar (indekslari)
+function editIndexes() {
+  const db = state.db;
+  const iss = jshshirIssues(db);
+  let idxs = db.rows.map((_, i) => i);
+  if (editUi.mode === 'bad') idxs = iss.bad;
+  if (editUi.mode === 'dup') idxs = iss.dups.flatMap((d) => d.rows);
+  if (editUi.filters.some(Filters.isActive)) {
+    const keep = new Set(Filters.apply(db.rows, editUi.filters));
+    idxs = idxs.filter((i) => keep.has(db.rows[i]));
+  }
+  const q = Match.norm(editUi.q), qd = Match.digits(editUi.q);
+  if (q) idxs = idxs.filter((i) => db.rows[i].some((v) => v != null && (Match.norm(v).includes(q) || (qd.length >= 3 && Match.digits(v).includes(qd)))));
+  return { idxs, iss };
+}
+
 function renderEdit() {
   const box = $('#edit-body');
   if (!box) return;
   const db = state.db;
   if (!db) { box.innerHTML = '<div class="box"><p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p></div>'; return; }
   if (!editUi.cols || editUi.cols.some((c) => c >= db.fields.length)) editUi.cols = defaultEditCols(db);
-  const iss = jshshirIssues(db);
-  const badRows = new Set(iss.bad);
-  const dupRows = new Set(iss.dups.flatMap((d) => d.rows));
   const cols = editUi.cols;
-
-  let idxs = db.rows.map((_, i) => i);
-  if (editUi.mode === 'bad') idxs = iss.bad;
-  if (editUi.mode === 'dup') idxs = iss.dups.flatMap((d) => d.rows);
-  const q = Match.norm(editUi.q), qd = Match.digits(editUi.q);
-  if (q) idxs = idxs.filter((i) => db.rows[i].some((v) => v != null && (Match.norm(v).includes(q) || (qd.length >= 3 && Match.digits(v).includes(qd)))));
-  const PAGE = 50;
-  const pages = Math.max(1, Math.ceil(idxs.length / PAGE));
-  editUi.page = Math.min(editUi.page, pages - 1);
-  const show = idxs.slice(editUi.page * PAGE, editUi.page * PAGE + PAGE);
-  const wideCols = new Set([db.nameIdx, db.fields.findIndex((f) => Match.canon(f.name).includes('korxonanomi'))]);
+  const nActive = editUi.filters.filter(Filters.isActive).length;
 
   box.innerHTML = `
     <div class="box">
       <div class="ed-help">💡 <span>Kerakli <b>katakni bosing va yozing</b> — boshqa joyni bosganingizda yoki <b>Enter</b> bosganingizda avtomatik saqlanadi.
-        Qator oxiridagi <b>✎</b> o'quvchining barcha ma'lumotlarini ochadi (u yerdan o'chirish ham mumkin).</span></div>
+        <b>Filtr</b> bilan kerakli o'quvchilarni ajratib, ularni tahrirlang yoki hammasiga bir xil qiymat qo'ying. Qator oxiridagi <b>✎</b> barcha ma'lumotlarni ochadi.</span></div>
       <div class="issue-tabs" id="ed-issues"></div>
       <div class="ed-bar">
         <input type="search" id="ed-q" placeholder="Qidirish: ism, JShShIR, telefon, guruh…" value="${esc(editUi.q)}">
+        <button id="ed-ftoggle" class="${editUi.filterOpen || nActive ? 'on-soft' : ''}">⚲ Filtr${nActive ? ` <span class="nbadge">${nActive}</span>` : ''}</button>
         <div class="col-pick">
           <button id="ed-cols">Ustunlar (${cols.length}) ▾</button>
           ${editUi.colsOpen ? `<div class="col-pick-menu">${db.fields.map((f, i) => `<label><input type="checkbox" data-col="${i}" ${cols.includes(i) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}</div>` : ''}
         </div>
         <button class="primary" id="ed-add">＋ Yangi o'quvchi</button>
       </div>
-      <div class="grid-wrap">
-        <table class="grid">
-          <thead><tr><th class="num">№</th>${cols.map((c) => `<th>${esc(db.fields[c].name)}</th>`).join('')}<th></th></tr></thead>
-          <tbody>${show.map((ri, k) => {
-            const r = db.rows[ri];
-            return `<tr>
-              <td class="num">${editUi.page * PAGE + k + 1}</td>
-              ${cols.map((c) => {
-                const bad = c === iss.ji && (badRows.has(ri) || dupRows.has(ri));
-                const title = c === iss.ji ? (badRows.has(ri) ? "JShShIR 14 ta raqam bo'lishi kerak" : dupRows.has(ri) ? 'Takroriy JShShIR' : '') : '';
-                return `<td><input class="cell ${wideCols.has(c) ? 'wide' : ''} ${bad ? 'bad' : ''}" data-ri="${ri}" data-fi="${c}" value="${esc(r[c] ?? '')}" ${title ? `title="${esc(title)}"` : ''} ${c === iss.ji ? 'inputmode="numeric"' : ''}></td>`;
-              }).join('')}
-              <td class="act"><button data-open="${ri}" title="Barcha ma'lumotlar">✎</button></td>
-            </tr>`;
-          }).join('') || `<tr><td colspan="${cols.length + 2}" class="muted" style="padding:16px">Hech narsa topilmadi.</td></tr>`}</tbody>
-        </table>
+      <div class="ed-filter" ${editUi.filterOpen ? '' : 'hidden'}>
+        <div class="ed-filter-grid">
+          <div>
+            <h4>Kimlarni tahrirlaysiz?</h4>
+            <div id="ed-filters"></div>
+          </div>
+          <div class="bulk">
+            <h4>Filtrlanganlarning hammasiga qiymat qo'yish</h4>
+            <label>Ustun
+              <select id="bulk-field"><option value="">Ustunni tanlang…</option>${db.fields.map((f, i) => `<option value="${i}" ${String(editUi.bulkField) === String(i) ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
+            </label>
+            <label>Yangi qiymat
+              <input id="bulk-val" list="bulk-list" value="${esc(editUi.bulkVal)}" placeholder="Masalan: Қолади" autocomplete="off">
+              <datalist id="bulk-list">${editUi.bulkField === '' ? '' : [...new Set(db.rows.map((r) => r[+editUi.bulkField]).filter((v) => v != null && String(v).trim()))].slice(0, 200).map((v) => `<option value="${esc(v)}">`).join('')}</datalist>
+            </label>
+            <button class="primary" id="bulk-go">Qo'llash</button>
+            <p class="fl-note">Bo'sh qoldirsangiz, o'sha ustun tozalanadi. Qo'llashdan oldin tasdiqlash so'raladi.</p>
+          </div>
+        </div>
       </div>
-      ${pages > 1 ? `<div class="pager"><button id="ed-prev" ${editUi.page ? '' : 'disabled'}>‹</button><span>${editUi.page + 1} / ${pages} sahifa · ${idxs.length} ta</span><button id="ed-next" ${editUi.page < pages - 1 ? '' : 'disabled'}>›</button></div>` : `<div class="pager">${idxs.length} ta</div>`}
+      <div id="ed-grid"></div>
     </div>`;
 
   renderIssueTabs();
-  $('#ed-q').oninput = (e) => {
-    editUi.q = e.target.value; editUi.page = 0;
-    const pos = e.target.selectionStart;
-    renderEdit();
-    const inp = $('#ed-q'); inp.focus(); inp.setSelectionRange(pos, pos);
-  };
+  $('#ed-q').oninput = (e) => { editUi.q = e.target.value; editUi.page = 0; renderEditGrid(); };
+  $('#ed-ftoggle').onclick = () => { editUi.filterOpen = !editUi.filterOpen; renderEdit(); };
   $('#ed-cols').onclick = () => { editUi.colsOpen = !editUi.colsOpen; renderEdit(); };
   box.querySelectorAll('[data-col]').forEach((cb) => (cb.onchange = () => {
     const c = +cb.dataset.col;
@@ -242,10 +245,76 @@ function renderEdit() {
     renderEdit();
   }));
   $('#ed-add').onclick = () => openRecord(-1);
+  if (editUi.filterOpen) {
+    Filters.render($('#ed-filters'), db, editUi.filters, () => {
+      editUi.page = 0;
+      renderEditGrid();
+      const n = editUi.filters.filter(Filters.isActive).length;
+      $('#ed-ftoggle').innerHTML = `⚲ Filtr${n ? ` <span class="nbadge">${n}</span>` : ''}`;
+    });
+    $('#bulk-field').onchange = (e) => {
+      editUi.bulkField = e.target.value;
+      const vals = e.target.value === '' ? [] : [...new Set(db.rows.map((r) => r[+e.target.value]).filter((v) => v != null && String(v).trim()))].slice(0, 200);
+      $('#bulk-list').innerHTML = vals.map((v) => `<option value="${esc(v)}">`).join('');
+    };
+    $('#bulk-val').oninput = (e) => { editUi.bulkVal = e.target.value; };
+    $('#bulk-go').onclick = async () => {
+      if (editUi.bulkField === '') { toast('Ustunni tanlang', 'err'); return; }
+      const fi = +editUi.bulkField;
+      const { idxs } = editIndexes();
+      if (!idxs.length) { toast('Filtrga mos o\'quvchi yo\'q', 'err'); return; }
+      if (!editUi.filters.some(Filters.isActive) && !editUi.q && editUi.mode === 'all' &&
+          !confirm('Filtr qo\'yilmagan — bu BARCHA o\'quvchilarga qo\'llanadi. Davom etilsinmi?')) return;
+      if (!confirm(`${idxs.length} ta o'quvchining "${db.fields[fi].label}" ustuniga "${editUi.bulkVal || '(bo\'sh)'}" yozilsinmi?`)) return;
+      for (const i of idxs) db.rows[i][fi] = parseInputValue(editUi.bulkVal, db.rows[i][fi]);
+      await afterInlineEdit();
+      renderEditGrid();
+      toast(`${idxs.length} ta o'quvchi yangilandi ✓`, 'ok');
+    };
+  }
+  renderEditGrid();
+}
+
+function renderEditGrid() {
+  const box = $('#ed-grid');
+  if (!box) return;
+  const db = state.db;
+  const cols = editUi.cols;
+  const { idxs, iss } = editIndexes();
+  const badRows = new Set(iss.bad);
+  const dupRows = new Set(iss.dups.flatMap((d) => d.rows));
+  const PAGE = 50;
+  const pages = Math.max(1, Math.ceil(idxs.length / PAGE));
+  editUi.page = Math.min(editUi.page, pages - 1);
+  const show = idxs.slice(editUi.page * PAGE, editUi.page * PAGE + PAGE);
+  const wideCols = new Set([db.nameIdx, db.fields.findIndex((f) => Match.canon(f.name).includes('korxonanomi'))]);
+  const filtered = idxs.length !== db.rows.length;
+
+  box.innerHTML = `
+    ${filtered ? `<p class="small ed-count">Ko'rsatilmoqda: <b>${idxs.length}</b> ta o'quvchi (jami ${db.rows.length})</p>` : ''}
+    <div class="grid-wrap">
+      <table class="grid">
+        <thead><tr><th class="num">№</th>${cols.map((c) => `<th>${esc(db.fields[c].name)}</th>`).join('')}<th></th></tr></thead>
+        <tbody>${show.map((ri, k) => {
+          const r = db.rows[ri];
+          return `<tr>
+            <td class="num">${editUi.page * PAGE + k + 1}</td>
+            ${cols.map((c) => {
+              const bad = c === iss.ji && (badRows.has(ri) || dupRows.has(ri));
+              const title = c === iss.ji ? (badRows.has(ri) ? "JShShIR 14 ta raqam bo'lishi kerak" : dupRows.has(ri) ? 'Takroriy JShShIR' : '') : '';
+              return `<td><input class="cell ${wideCols.has(c) ? 'wide' : ''} ${bad ? 'bad' : ''}" data-ri="${ri}" data-fi="${c}" value="${esc(r[c] ?? '')}" ${title ? `title="${esc(title)}"` : ''} ${c === iss.ji ? 'inputmode="numeric"' : ''}></td>`;
+            }).join('')}
+            <td class="act"><button data-open="${ri}" title="Barcha ma'lumotlar">✎</button></td>
+          </tr>`;
+        }).join('') || `<tr><td colspan="${cols.length + 2}" class="muted" style="padding:16px">Hech narsa topilmadi.</td></tr>`}</tbody>
+      </table>
+    </div>
+    ${pages > 1 ? `<div class="pager"><button id="ed-prev" ${editUi.page ? '' : 'disabled'}>‹</button><span>${editUi.page + 1} / ${pages} sahifa · ${idxs.length} ta</span><button id="ed-next" ${editUi.page < pages - 1 ? '' : 'disabled'}>›</button></div>` : `<div class="pager">${idxs.length} ta</div>`}`;
+
   box.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => openRecord(+b.dataset.open)));
   const prev = $('#ed-prev'), next = $('#ed-next');
-  if (prev) prev.onclick = () => { editUi.page--; renderEdit(); };
-  if (next) next.onclick = () => { editUi.page++; renderEdit(); };
+  if (prev) prev.onclick = () => { editUi.page--; renderEditGrid(); };
+  if (next) next.onclick = () => { editUi.page++; renderEditGrid(); };
 
   box.querySelectorAll('input.cell').forEach((inp) => {
     inp.addEventListener('keydown', (e) => {
