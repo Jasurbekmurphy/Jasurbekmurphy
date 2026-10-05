@@ -127,3 +127,92 @@ tr.detail td { white-space: normal; background: var(--bg); }
 .stack input[type=password] { width: 100%; padding: 9px 10px; min-height: 42px; }
 button:disabled { opacity: .5; cursor: default; }
 a { color: var(--accent); }
+
+/* ---------- Tablar: to'rtta bo'lim telefonga sig'sin ---------- */
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { white-space: nowrap; font-size: 14px; padding: 10px 4px; }
+
+/* ---------- Filtr muharriri ---------- */
+.fl { display: flex; flex-direction: column; gap: 0; }
+.fl-presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.fl-cap { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.pill {
+  min-height: 34px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: var(--surface); border: 1px solid var(--accent); color: var(--accent);
+}
+.pill:hover { background: var(--accent-soft); }
+.cond {
+  border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px;
+  padding: 10px; background: var(--surface); display: flex; flex-direction: column; gap: 8px;
+}
+.cond.active { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-soft), var(--surface) 40%); }
+.cond-head { display: flex; gap: 8px; align-items: center; }
+.cond-head select { flex: 1; min-width: 0; font-weight: 600; }
+.cond-no {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; background: var(--accent); color: var(--accent-text);
+}
+.icon-btn {
+  flex: none; min-height: 36px; width: 36px; padding: 0; border-radius: 8px; color: var(--muted);
+  border: 1px solid transparent; background: transparent; font-size: 16px;
+}
+.icon-btn:hover { border-color: var(--border); color: var(--bad); }
+.ops { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; background: var(--bg); border-radius: 9px; }
+.op {
+  flex: 1 1 auto; min-height: 32px; padding: 4px 10px; font-size: 13px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted);
+}
+.op.on { background: var(--surface); color: var(--accent); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow: auto; margin: 0; }
+.chip {
+  display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 10px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none;
+}
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.chip .cn { font-size: 11px; opacity: .7; }
+.chip-search, .fl-input { width: 100%; padding: 8px 10px; min-height: 38px; }
+.range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+.range label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.range input { width: 100%; padding: 9px 10px; min-height: 42px; color: var(--text); }
+.fl-note { font-size: 12px; color: var(--muted); margin: 0; }
+.fl-join { display: flex; align-items: center; gap: 8px; margin: 6px 0 6px 14px; padding-left: 14px; border-left: 2px dashed var(--border); min-height: 40px; }
+.fl-hint { font-size: 12px; color: var(--muted); }
+.seg { display: inline-flex; padding: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; gap: 2px; }
+.seg button { min-height: 28px; padding: 2px 14px; border: 0; border-radius: 999px; background: transparent; font-size: 12px; font-weight: 700; color: var(--muted); }
+.seg button.on { background: var(--accent); color: var(--accent-text); }
+.seg.wide { display: flex; width: 100%; margin: 8px 0 12px; }
+.seg.wide button { flex: 1; min-height: 36px; font-size: 13px; padding: 2px 6px; }
+.fl-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.dashed { flex: 1; border: 1.5px dashed var(--accent); color: var(--accent); background: transparent; font-weight: 600; }
+.dashed:hover { background: var(--accent-soft); }
+.link { border: 0; background: transparent; color: var(--bad); text-decoration: underline; min-height: 36px; padding: 4px 8px; }
+
+/* ---------- Natija taqsimoti ---------- */
+.breakdown { display: flex; flex-direction: column; gap: 4px; margin: -4px 0 10px; font-size: 13px; }
+.bd-name { color: var(--muted); }
+.bd-item { display: inline-block; background: var(--accent-soft); border-radius: 6px; padding: 1px 7px; margin: 2px 2px 0 0; }
+
+/* ---------- Korxonalar ---------- */
+#comp-q { margin-top: 4px; }
+.comp-list { display: flex; flex-direction: column; gap: 8px; }
+.comp { border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 10px; padding: 0; margin: 0; }
+.comp.has { border-left-color: var(--ok); }
+.comp > summary { list-style: none; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.comp > summary::-webkit-details-marker { display: none; }
+.comp-top { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.comp-name { font-weight: 700; word-break: break-word; }
+.comp-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.comp-sub .ok { color: var(--ok); } .comp-sub .warn { color: var(--warn); }
+.gchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.gchip { font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; }
+.comp-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.ct {
+  flex: none; min-height: 32px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  border: 1.5px solid var(--bad); color: var(--bad); background: transparent; white-space: nowrap;
+}
+.ct.on { border-color: var(--ok); background: var(--ok); color: #fff; }
+.ct.sm { min-height: 28px; padding: 2px 10px; font-size: 12px; }
+table.stu td { vertical-align: middle; }
+table.stu td.wrap { white-space: normal; min-width: 150px; }

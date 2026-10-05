@@ -208,6 +208,9 @@ const state = {
   tpl: null,       // to'ldiriladigan shablon
   templates: [],   // saqlangan jadval shablonlari
   table: null,     // "Jadval" panelidagi joriy sozlama
+  view: null,      // baza + qo'shimcha (virtual) ustunlar: shartnoma belgilari
+  marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
+  compUi: { q: '', show: 'all', open: new Set() },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
 };
 
@@ -304,7 +307,7 @@ function renderPending() {
 
 // ---------------------------------------------------------------- TO'LDIRISH paneli
 function bestField(text) {
-  const db = state.db;
+  const db = state.view;
   if (isNumHeader(text)) return { idx: '__num__', score: 1 };
   let best = { idx: '', score: 0 };
   db.fields.forEach((f, i) => {
@@ -361,7 +364,7 @@ function detectStartRow(sheet, headerRow) {
 }
 
 async function onTemplateFile(file) {
-  if (!state.db) { toast('Avval bazaga asosiy jadvalni yuklang', 'err'); return; }
+  if (!state.view) { toast('Avval bazaga asosiy jadvalni yuklang', 'err'); return; }
   if (!/\.xlsx$|\.xlsm$/i.test(file.name)) { toast('Faqat .xlsx formatidagi fayl qo\'llab-quvvatlanadi', 'err'); return; }
   try {
     const buf = await readFile(file);
@@ -399,7 +402,7 @@ function setupTemplateColumns() {
 }
 
 function findTemplateKeyCol() {
-  const t = state.tpl, db = state.db;
+  const t = state.tpl, db = state.view;
   const prefer = [db.keyIdx, db.nameIdx].filter((i) => i >= 0);
   const cols = prefer.map((idx) => t.columns.find((x) => x.field === idx)).filter(Boolean);
   // Qiymatlari to'ldirilgan kalit ustun ustun turadi (masalan, JShShIR bo'sh, F.I.Sh bor)
@@ -414,11 +417,11 @@ function countKeyValues(col) {
 }
 
 function filteredRows() {
-  return Filters.apply(state.db.rows, state.tpl.filters);
+  return Filters.apply(state.view.rows, state.tpl.filters);
 }
 
 function buildLookupIndex(idx) {
-  const db = state.db;
+  const db = state.view;
   const isJ = Match.canon(db.fields[idx].name).includes('jshshir');
   const key = (v) => (isJ ? Match.digits(v) : Match.nameKey(v));
   const exact = new Map(), short = new Map();
@@ -441,7 +444,7 @@ function buildLookupIndex(idx) {
 }
 
 function buildWrites() {
-  const t = state.tpl, db = state.db;
+  const t = state.tpl, db = state.view;
   const writes = [], outRows = [], notFound = [];
   const cols = t.columns.filter((x) => x.field !== '');
   const valueOf = (col, row, i) => (col.field === '__num__' ? i + 1 : row[col.field]);
@@ -482,14 +485,14 @@ function buildWrites() {
 }
 
 function fieldOptions(selected) {
-  const db = state.db;
+  const db = state.view;
   return `<option value="">— bo'sh qoldirish —</option>
     <option value="__num__" ${selected === '__num__' ? 'selected' : ''}>№ (tartib raqami 1, 2, 3…)</option>` +
     db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${selected === i ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
 }
 
 function renderFilters() {
-  Filters.render($('#tpl-filters'), state.db, state.tpl.filters, renderPreview);
+  Filters.render($('#tpl-filters'), state.view, state.tpl.filters, renderPreview);
 }
 
 function renderTemplate() {
@@ -618,14 +621,18 @@ async function saveLocal() {
     // "Eslab qolmaslik" rejimi: bu qurilmada hech narsa qoldirilmaydi
     await Store.del('db');
     await Store.del('templates');
+    await Store.del('marks');
     return;
   }
   if (state.db) await Store.set('db', state.db); else await Store.del('db');
   await Store.set('templates', state.templates);
+  await Store.set('marks', state.marks);
 }
 
 function onDbChanged() {
+  computeView();
   renderDbStatus();
+  renderCompanies();
   if (state.db && !state.table) state.table = defaultTable();
   renderTable();
   if (state.tpl && state.db) renderTemplate();
@@ -634,22 +641,22 @@ function onDbChanged() {
 
 // ---------------------------------------------------------------- JADVAL paneli (ixtiyoriy jadval)
 function findFieldIdx(...keys) {
-  return state.db.fields.findIndex((f) => keys.some((k) => Match.canon(f.name).includes(k)));
+  return state.view.fields.findIndex((f) => keys.some((k) => Match.canon(f.name).includes(k)));
 }
 
 function defaultTable() {
-  const db = state.db;
+  const db = state.view;
   const cols = [db.nameIdx, findFieldIdx('gurux', 'guruh'), findFieldIdx('telefon')].filter((i, k, a) => i >= 0 && a.indexOf(i) === k);
   return { q: '', filters: [], cols: cols.length ? cols : db.fields.map((_, i) => i).slice(0, 5), num: true, sort: '', dir: 1, title: '', from: '', to: '' };
 }
 
 // Shablonlar ustun nomi bilan saqlanadi — asosiy jadvalda ustunlar tartibi o'zgarsa ham ishlaydi
 function toPortable(t) {
-  const lab = (i) => (i === '' || i == null ? '' : state.db.fields[i]?.label);
+  const lab = (i) => (i === '' || i == null ? '' : state.view.fields[i]?.label);
   return { ...t, q: '', cols: t.cols.map(lab), sort: lab(t.sort), filters: t.filters.map((f) => ({ ...f, field: lab(f.field) })) };
 }
 function fromPortable(t) {
-  const idx = (l) => (l === '' || l == null ? '' : state.db.fields.findIndex((f) => f.label === l));
+  const idx = (l) => (l === '' || l == null ? '' : state.view.fields.findIndex((f) => f.label === l));
   return {
     ...defaultTable(), ...t, q: '',
     cols: t.cols.map(idx).filter((i) => i !== '' && i >= 0),
@@ -659,7 +666,7 @@ function fromPortable(t) {
 }
 
 function tableRows() {
-  const t = state.table, db = state.db;
+  const t = state.table, db = state.view;
   let rows = Filters.apply(db.rows, t.filters);
   const q = Match.norm(t.q), qd = Match.digits(t.q);
   if (q) rows = rows.filter((r) => r.some((v) => v != null && (Match.norm(v).includes(q) || (qd.length >= 3 && Match.digits(v).includes(qd)))));
@@ -678,8 +685,8 @@ function tableRows() {
 
 function renderTable() {
   const box = $('#tb-body');
-  if (!state.db) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
-  const t = state.table, db = state.db;
+  if (!state.view) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
+  const t = state.table, db = state.view;
   const unused = db.fields.map((_, i) => i).filter((i) => !t.cols.includes(i) && !db.fields[i].num);
   box.innerHTML = `
     ${state.templates.length ? `<h4>Saqlangan jadvallar</h4><div class="presets">${state.templates.map((tp, i) =>
@@ -755,12 +762,13 @@ function renderTable() {
 }
 
 function renderTableResult() {
-  const t = state.table, db = state.db;
+  const t = state.table, db = state.view;
   const rows = tableRows();
   const show = rows.slice(0, 50);
   const heads = (t.num ? ['№'] : []).concat(t.cols.map((c) => db.fields[c].name));
   $('#tb-result').innerHTML = `
     <h4>Natija: ${rows.length} ta</h4>
+    ${resultBreakdown(rows)}
     ${t.cols.length ? `<div class="scroll"><table class="prev"><thead><tr>${heads.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
       <tbody>${show.map((r, i) => `<tr data-ri="${db.rows.indexOf(r)}">${t.num ? `<td>${i + 1}</td>` : ''}${t.cols.map((c) => `<td>${esc(r[c] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
       ${rows.length > show.length ? `<p class="muted small">Ko'rinishda birinchi ${show.length} tasi. Excel faylda hammasi (${rows.length} ta) bo'ladi.</p>` : ''}
@@ -795,7 +803,7 @@ function renderTableResult() {
 }
 
 async function downloadTable() {
-  const t = state.table, db = state.db;
+  const t = state.table, db = state.view;
   const rows = tableRows();
   const headers = (t.num ? ['№'] : []).concat(t.cols.map((c) => db.fields[c].name));
   const data = rows.map((r, i) => (t.num ? [i + 1] : []).concat(t.cols.map((c) => r[c] ?? null)));
@@ -811,15 +819,216 @@ async function downloadTable() {
   }
 }
 
+function resultBreakdown(rows) {
+  const t = state.table, db = state.view;
+  const fields = [...new Set(t.filters.filter(Filters.isActive).map((f) => f.field))];
+  if (!fields.length) return '';
+  return `<div class="breakdown">${fields.map((fi) => {
+    const counts = new Map();
+    for (const r of rows) { const v = String(r[fi] ?? '') || "(bo'sh)"; counts.set(v, (counts.get(v) || 0) + 1); }
+    const list = [...counts].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true }));
+    return `<div><span class="bd-name">${esc(db.fields[fi].name)}:</span> ${list.slice(0, 12).map(([v, n]) =>
+      `<span class="bd-item">${esc(v.length > 30 ? v.slice(0, 30) + '…' : v)} <b>${n}</b></span>`).join('')}${list.length > 12 ? ` <span class="muted">+${list.length - 12}</span>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------- SHARTNOMA belgilari va virtual ustunlar
+const companyKey = (name) => Match.norm(name).replace(/\s+/g, '');
+
+function dbFieldIdx(...keys) {
+  if (!state.db) return -1;
+  return state.db.fields.findIndex((f) => keys.some((k) => Match.canon(f.name).includes(k)));
+}
+
+function studentKey(row) { return rowKey(state.db, row); }
+
+function companyContract(name) {
+  const m = state.marks.comp[companyKey(name)];
+  return !!(m && m.c);
+}
+
+function studentContract(row) {
+  const k = studentKey(row);
+  if (k in state.marks.stu) return { on: !!state.marks.stu[k], src: 'mark' };
+  const xi = dbFieldIdx('ikkitamonlama', 'shartnoma');
+  return { on: xi >= 0 && row[xi] != null && String(row[xi]).trim() !== '', src: 'excel' };
+}
+
+function computeView() {
+  const db = state.db;
+  if (!db) { state.view = null; return; }
+  const ci = dbFieldIdx('korxonanomi', 'korxona');
+  const fields = db.fields.concat([
+    { col: -1, name: 'Korxona shartnomasi', label: 'Korxona shartnomasi (+/−)', virtual: true },
+    { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true },
+  ]);
+  const rows = db.rows.map((r) => r.concat([
+    ci >= 0 && r[ci] != null ? (companyContract(r[ci]) ? '+' : '−') : null,
+    studentContract(r).on ? '+' : '−',
+  ]));
+  state.view = { ...db, fields, rows };
+}
+
+let marksTimer = null;
+async function marksChanged() {
+  await saveLocal();
+  computeView();
+  renderCompanies();
+  if (state.table) renderTable(); // filtrdagi "+/−" qiymatlar ham yangilansin
+  if (state.tpl) renderTemplate();
+  clearTimeout(marksTimer);
+  marksTimer = setTimeout(() => cloudPush(), 2000);
+}
+
+// ---------------------------------------------------------------- KORXONALAR paneli
+function companyGroups() {
+  const db = state.db;
+  const ci = dbFieldIdx('korxonanomi', 'korxona');
+  if (ci < 0) return null;
+  const gi = dbFieldIdx('gurux', 'guruh');
+  const ri = dbFieldIdx('masulhodim');
+  const ui = dbFieldIdx('ustasi');
+  const phoneAfter = (i) => (i >= 0 && db.fields[i + 1] && Match.canon(db.fields[i + 1].name).includes('telefon') ? i + 1 : -1);
+  const map = new Map();
+  for (const r of db.rows) {
+    const name = r[ci];
+    if (name == null || String(name).trim() === '') continue;
+    const k = companyKey(name);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, { key: k, names: new Map(), rows: [], people: new Map(), masters: new Map() });
+    const c = map.get(k);
+    c.names.set(name, (c.names.get(name) || 0) + 1);
+    c.rows.push(r);
+    const add = (m, i) => { if (i >= 0 && r[i]) { const tel = phoneAfter(i) >= 0 ? r[phoneAfter(i)] : ''; m.set(r[i] + (tel ? ' · ' + tel : ''), 1); } };
+    add(c.people, ri);
+    add(c.masters, ui);
+  }
+  const list = [...map.values()].map((c) => {
+    const name = [...c.names].sort((a, b) => b[1] - a[1])[0][0];
+    const groups = new Map();
+    for (const r of c.rows) { const gname = gi >= 0 ? String(r[gi] ?? '—') : '—'; groups.set(gname, (groups.get(gname) || 0) + 1); }
+    const withContract = c.rows.filter((r) => studentContract(r).on).length;
+    return { ...c, name, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: companyContract(name), withContract };
+  });
+  list.sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
+  return { list, gi };
+}
+
+function renderCompanies() {
+  const box = $('#comp-body');
+  if (!box) return;
+  if (!state.db) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
+  const data = companyGroups();
+  if (!data) { box.innerHTML = '<p class="muted">Bazada korxona nomi ustuni topilmadi.</p>'; return; }
+  const ui = state.compUi, db = state.db;
+  const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
+  const ti = dbFieldIdx('telefon');
+  const all = data.list;
+  let list = all;
+  const q = Match.norm(ui.q);
+  if (q) list = list.filter((c) => Match.norm(c.name).includes(q) || c.rows.some((r) => Match.norm(r[nameIdx]).includes(q)));
+  if (ui.show === 'yes') list = list.filter((c) => c.contract);
+  if (ui.show === 'no') list = list.filter((c) => !c.contract);
+  const students = all.reduce((n, c) => n + c.rows.length, 0);
+  const stuWith = all.reduce((n, c) => n + c.withContract, 0);
+  const compWith = all.filter((c) => c.contract).length;
+
+  box.innerHTML = `
+    <div class="stats">
+      <div><b>${all.length}</b><span>korxona</span></div>
+      <div class="ok"><b>${compWith}</b><span>korxona shartnomasi bor</span></div>
+      <div class="${stuWith < students ? 'warn' : 'ok'}"><b>${stuWith}/${students}</b><span>o'quvchi shartnomasi</span></div>
+    </div>
+    <input type="search" id="comp-q" placeholder="Korxona yoki o'quvchi nomi…" value="${esc(ui.q)}">
+    <div class="seg wide" id="comp-show">
+      <button data-show="all" class="${ui.show === 'all' ? 'on' : ''}">Hammasi (${all.length})</button>
+      <button data-show="yes" class="${ui.show === 'yes' ? 'on' : ''}">Shartnoma bor (${compWith})</button>
+      <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Shartnoma yo'q (${all.length - compWith})</button>
+    </div>
+    <div class="comp-list">${list.map((c) => `
+      <details class="comp ${c.contract ? 'has' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
+        <summary>
+          <div class="comp-top">
+            <div class="comp-name">${esc(c.name)}</div>
+            <button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan shartnoma">${c.contract ? '＋ Shartnoma bor' : "− Shartnoma yo'q"}</button>
+          </div>
+          <div class="comp-sub">
+            <span>👥 ${c.rows.length} o'quvchi</span>
+            <span class="${c.withContract === c.rows.length ? 'ok' : 'warn'}">📄 o'quvchi shartnomasi ${c.withContract}/${c.rows.length}</span>
+          </div>
+          <div class="gchips">${c.groups.map(([gname, n]) => `<span class="gchip">${esc(gname)}-guruh <b>${n}</b></span>`).join('')}</div>
+        </summary>
+        <div class="comp-body">
+          ${c.people.size ? `<p class="small"><span class="muted">Korxonadan mas'ul:</span> ${[...c.people.keys()].map(esc).join('; ')}</p>` : ''}
+          ${c.masters.size ? `<p class="small"><span class="muted">Usta:</span> ${[...c.masters.keys()].map(esc).join('; ')}</p>` : ''}
+          <div class="scroll"><table class="prev stu">
+            <thead><tr><th>№</th><th>F.I.Sh</th><th>Shartnoma</th><th>Guruh</th><th>Telefon</th></tr></thead>
+            <tbody>${c.rows.map((r, i) => { const sc = studentContract(r); return `<tr>
+              <td>${i + 1}</td><td class="wrap">${esc(r[nameIdx])}</td>
+              <td><button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}" title="${sc.src === 'excel' ? 'Excel jadvalidagi shartnoma ustunidan' : 'Qo\'lda belgilangan'}">${sc.on ? '＋ bor' : "− yo'q"}</button></td>
+              <td>${esc(data.gi >= 0 ? r[data.gi] ?? '' : '')}</td><td>${esc(ti >= 0 ? r[ti] ?? '' : '')}</td>
+            </tr>`; }).join('')}</tbody>
+          </table></div>
+          <div class="row-btns">
+            <button data-allstu="${esc(c.key)}" data-v="1">Hammasiga ＋</button>
+            <button data-allstu="${esc(c.key)}" data-v="0">Hammasiga −</button>
+            <button data-xlcomp="${esc(c.key)}">O'quvchilar ro'yxati (Excel)</button>
+          </div>
+        </div>
+      </details>`).join('') || '<p class="muted">Hech narsa topilmadi.</p>'}</div>
+    <div class="row-btns"><button class="primary" id="comp-xl">Korxonalar ro'yxatini Excel'ga</button></div>`;
+
+  $('#comp-q').oninput = (e) => {
+    ui.q = e.target.value;
+    const pos = e.target.selectionStart;
+    renderCompanies();
+    const inp = $('#comp-q'); inp.focus(); inp.setSelectionRange(pos, pos);
+  };
+  box.querySelectorAll('[data-show]').forEach((b) => (b.onclick = () => { ui.show = b.dataset.show; renderCompanies(); }));
+  box.querySelectorAll('details.comp').forEach((d) => d.addEventListener('toggle', () => {
+    if (d.open) ui.open.add(d.dataset.key); else ui.open.delete(d.dataset.key);
+  }));
+  box.querySelectorAll('[data-ckey]').forEach((b) => (b.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const k = b.dataset.ckey;
+    const cur = state.marks.comp[k] || {};
+    state.marks.comp[k] = { ...cur, c: !cur.c, name: b.dataset.cname, at: Date.now() };
+    marksChanged();
+  }));
+  box.querySelectorAll('[data-skey]').forEach((b) => (b.onclick = () => {
+    state.marks.stu[b.dataset.skey] = b.dataset.on !== '1';
+    marksChanged();
+  }));
+  const byKey = (k) => all.find((c) => c.key === k);
+  box.querySelectorAll('[data-allstu]').forEach((b) => (b.onclick = () => {
+    for (const r of byKey(b.dataset.allstu).rows) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
+    marksChanged();
+  }));
+  box.querySelectorAll('[data-xlcomp]').forEach((b) => (b.onclick = async () => {
+    const c = byKey(b.dataset.xlcomp);
+    const rows = c.rows.map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, studentContract(r).on ? '+' : '−']);
+    const blob = await XlsxWrite.buildWorkbook({ title: c.name + ' — o\'quvchilar', sheetName: 'O\'quvchilar', headers: ['№', 'F.I.Sh', 'Guruh', 'Telefon', "O'quvchi shartnomasi"], rows });
+    downloadBlob(blob, c.name.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60) + '.xlsx');
+  }));
+  $('#comp-xl').onclick = async () => {
+    const rows = list.map((c, i) => [i + 1, c.name, c.rows.length, c.groups.map(([gname, n]) => `${gname} (${n})`).join(', '),
+      c.contract ? '+' : '−', `${c.withContract}/${c.rows.length}`, [...c.people.keys()].join('; ')]);
+    const blob = await XlsxWrite.buildWorkbook({ title: 'Korxonalar ro\'yxati', sheetName: 'Korxonalar',
+      headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Korxona shartnomasi', "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
+    downloadBlob(blob, 'Korxonalar.xlsx');
+  };
+}
+
 // ---------------------------------------------------------------- BULUT (kod bilan)
 function cloudPayload() {
-  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, db: { ...state.db, file: Sync.toB64(state.db.file) } };
+  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, marks: state.marks, db: { ...state.db, file: Sync.toB64(state.db.file) } };
 }
 
 async function applyPayload(p) {
   const file = Sync.fromB64(p.db.file);
   state.db = { ...p.db, file: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) };
   state.templates = p.templates || [];
+  state.marks = p.marks || { comp: {}, stu: {} };
   state.cloud.token = p.token || state.cloud.token;
   state.table = null;
   await saveLocal();
@@ -956,8 +1165,8 @@ function renderCloud() {
     $('#cl-logout').onclick = async () => {
       if (!confirm('Bu qurilmadan baza va kod o\'chirilsinmi? (Bulutdagi baza saqlanib qoladi)')) return;
       state.cloud = { session: null, token: '', sha: null, remember: true, dirty: false, remote: true };
-      state.db = null; state.templates = []; state.table = null;
-      await Store.del('cloud'); await Store.del('db'); await Store.del('templates');
+      state.db = null; state.templates = []; state.table = null; state.marks = { comp: {}, stu: {} };
+      await Store.del('cloud'); await Store.del('db'); await Store.del('templates'); await Store.del('marks');
       onDbChanged();
     };
     return;
@@ -1049,6 +1258,7 @@ async function init() {
   try {
     state.db = (await Store.get('db')) || null;
     state.templates = (await Store.get('templates')) || [];
+    state.marks = (await Store.get('marks')) || { comp: {}, stu: {} };
     const saved = await Store.get('cloud');
     if (saved && saved.key) {
       Object.assign(state.cloud, { session: { key: saved.key, salt: saved.salt, iter: saved.iter }, token: saved.token, sha: saved.sha, dirty: !!saved.dirty, at: saved.at, remember: true });

@@ -6,11 +6,11 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
   const OPS = [
-    ['in', 'qiymatlardan biri'],
-    ['notempty', "bo'sh emas (to'ldirilgan)"],
-    ['empty', "bo'sh"],
-    ['contains', 'matn ichida bor'],
-    ['range', 'oraliq (dan – gacha)'],
+    ['in', 'Tanlash'],
+    ['range', 'Oraliq'],
+    ['contains', "So'z bor"],
+    ['notempty', "To'ldirilgan"],
+    ['empty', "Bo'sh"],
   ];
 
   // Taqqoslash uchun: raqam yoki sana (kk.oo.yyyy -> yyyymmdd)
@@ -86,6 +86,19 @@
     return out;
   }
 
+  // Shartning qisqa matni (masalan: "Гурухи: 50 – 52")
+  function describe(db, f) {
+    const name = db.fields[f.field] ? db.fields[f.field].name : '';
+    switch (f.op) {
+      case 'in': return `${name}: ${f.values.length <= 3 ? f.values.map((v) => v || "(bo'sh)").join(', ') : f.values.length + ' ta qiymat'}`;
+      case 'notempty': return `${name}: to'ldirilgan`;
+      case 'empty': return `${name}: bo'sh`;
+      case 'contains': return `${name}: «${f.text}»`;
+      case 'range': return `${name}: ${f.from || '…'} – ${f.to || '…'}`;
+      default: return name;
+    }
+  }
+
   /**
    * Filtr muharriri.
    * @param {HTMLElement} box
@@ -100,39 +113,52 @@
       for (const r of db.rows) { const v = String(r[field] ?? ''); counts.set(v, (counts.get(v) || 0) + 1); }
       return [...counts].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true }));
     };
+    const fieldSelect = (fi, f) => `
+      <select data-fi="${fi}" class="filter-field">
+        <option value="">Ustunni tanlang…</option>
+        ${db.fields.map((x, i) => `<option value="${i}" ${f.field === i ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+      </select>`;
 
     box.innerHTML = `
-      ${pre.length ? `<div class="presets">${pre.map((p, i) => `<button class="chip-btn" data-preset="${i}">⚡ ${esc(p.name)}</button>`).join('')}</div>` : ''}
+      <div class="fl">
+      ${pre.length ? `<div class="fl-presets"><span class="fl-cap">Tayyor:</span>${pre.map((p, i) => `<button class="pill" data-preset="${i}">${esc(p.name)}</button>`).join('')}</div>` : ''}
       ${filters.map((f, fi) => {
         let body = '';
         if (f.field !== '') {
           if (f.op === 'in') {
             const vc = valueCounts(f.field);
-            body = `${vc.length > 8 ? `<input type="search" class="chip-search" data-fi="${fi}" placeholder="Qiymatlar ichidan qidirish…">` : ''}
+            body = `${vc.length > 8 ? `<input type="search" class="chip-search" placeholder="Qiymat qidirish…">` : ''}
               <div class="chips">${vc.map(([v, n]) =>
-              `<label class="chip"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.includes(v) ? 'checked' : ''}> <span class="cv">${esc(v || "(bo'sh)")}</span> <span class="muted">${n}</span></label>`).join('')}</div>`;
+              `<label class="chip ${f.values.includes(v) ? 'on' : ''}"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.includes(v) ? 'checked' : ''}><span class="cv">${esc(v || "(bo'sh)")}</span><span class="cn">${n}</span></label>`).join('')}</div>`;
           } else if (f.op === 'contains') {
-            body = `<input type="search" data-fi="${fi}" data-k="text" value="${esc(f.text)}" placeholder="Masalan: MChJ">`;
+            body = `<input type="search" class="fl-input" data-fi="${fi}" data-k="text" value="${esc(f.text)}" placeholder="Qidiriladigan so'z, masalan: MChJ">`;
           } else if (f.op === 'range') {
-            body = `<div class="range"><input data-fi="${fi}" data-k="from" value="${esc(f.from)}" placeholder="dan (masalan 01.01.2009 yoki 50)">
-              <span>—</span><input data-fi="${fi}" data-k="to" value="${esc(f.to)}" placeholder="gacha"></div>`;
+            body = `<div class="range">
+              <label><span>dan</span><input data-fi="${fi}" data-k="from" value="${esc(f.from)}" placeholder="50 yoki 01.01.2009" inputmode="decimal"></label>
+              <label><span>gacha</span><input data-fi="${fi}" data-k="to" value="${esc(f.to)}" placeholder="52 yoki 31.12.2009" inputmode="decimal"></label>
+            </div><p class="fl-note">Chegaralar ham kiradi: 50 – 52 → 50, 51 va 52.</p>`;
           }
         }
         return `
-          ${fi > 0 ? `<div class="join"><button data-join="${fi}" class="${f.join === 'or' ? 'or' : ''}">${f.join === 'or' ? 'YOKI' : 'VA'}</button></div>` : ''}
-          <div class="filter">
-            <div class="filter-head">
-              <select data-fi="${fi}" class="filter-field">
-                <option value="">Ustunni tanlang…</option>
-                ${db.fields.map((x, i) => `<option value="${i}" ${f.field === i ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
-              </select>
-              <button class="icon" data-rm="${fi}" title="O'chirish">✕</button>
+          ${fi > 0 ? `<div class="fl-join"><div class="seg">
+              <button data-join="${fi}" data-v="and" class="${f.join !== 'or' ? 'on' : ''}">VA</button>
+              <button data-join="${fi}" data-v="or" class="${f.join === 'or' ? 'on' : ''}">YOKI</button>
+            </div><span class="fl-hint">${f.join === 'or' ? 'ikkalasidan biri bajarilsa yetarli' : 'ikkala shart ham bajarilsin'}</span></div>` : ''}
+          <div class="cond ${isActive(f) ? 'active' : ''}">
+            <div class="cond-head">
+              <span class="cond-no">${fi + 1}</span>
+              ${fieldSelect(fi, f)}
+              <button class="icon-btn" data-rm="${fi}" title="Shartni o'chirish" aria-label="O'chirish">✕</button>
             </div>
-            ${f.field !== '' ? `<select data-fi="${fi}" class="filter-op">${OPS.map(([v, t]) => `<option value="${v}" ${f.op === v ? 'selected' : ''}>${t}</option>`).join('')}</select>` : ''}
+            ${f.field !== '' ? `<div class="ops">${OPS.map(([v, t]) => `<button class="op ${f.op === v ? 'on' : ''}" data-op="${v}" data-fi="${fi}">${t}</button>`).join('')}</div>` : '<p class="fl-note">Qaysi ustun bo\'yicha filtrlashni tanlang.</p>'}
             ${body}
           </div>`;
       }).join('')}
-      <div class="row-btns"><button class="add-filter">+ Shart qo'shish</button>${filters.length ? '<button class="clear-filters">Filtrlarni tozalash</button>' : ''}</div>`;
+      <div class="fl-actions">
+        <button class="add-filter dashed">＋ Shart qo'shish</button>
+        ${filters.length ? '<button class="clear-filters link">Hammasini tozalash</button>' : ''}
+      </div>
+      </div>`;
 
     const rerender = () => { render(box, db, filters, onChange); onChange(); };
     box.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => {
@@ -145,28 +171,31 @@
       f.values = [];
       rerender();
     }));
-    box.querySelectorAll('.filter-op').forEach((s) => (s.onchange = () => {
-      filters[+s.dataset.fi].op = s.value;
+    box.querySelectorAll('[data-op]').forEach((b) => (b.onclick = () => {
+      filters[+b.dataset.fi].op = b.dataset.op;
       rerender();
     }));
     box.querySelectorAll('.chips input[type=checkbox]').forEach((cb) => (cb.onchange = () => {
       const f = filters[+cb.dataset.fi];
       f.values = cb.checked ? [...f.values, cb.value] : f.values.filter((v) => v !== cb.value);
+      cb.closest('.chip').classList.toggle('on', cb.checked);
+      cb.closest('.cond').classList.toggle('active', isActive(f));
       onChange();
     }));
     box.querySelectorAll('.chip-search').forEach((inp) => (inp.oninput = () => {
       const q = Match.norm(inp.value);
       inp.nextElementSibling.querySelectorAll('.chip').forEach((ch) => {
-        ch.hidden = q && !Match.norm(ch.querySelector('.cv').textContent).includes(q);
+        ch.hidden = !!q && !Match.norm(ch.querySelector('.cv').textContent).includes(q);
       });
     }));
     box.querySelectorAll('input[data-k]').forEach((inp) => (inp.oninput = () => {
-      filters[+inp.dataset.fi][inp.dataset.k] = inp.value;
+      const f = filters[+inp.dataset.fi];
+      f[inp.dataset.k] = inp.value;
+      inp.closest('.cond').classList.toggle('active', isActive(f));
       onChange();
     }));
     box.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => {
-      const f = filters[+b.dataset.join];
-      f.join = f.join === 'or' ? 'and' : 'or';
+      filters[+b.dataset.join].join = b.dataset.v;
       rerender();
     }));
     box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { filters.splice(+b.dataset.rm, 1); rerender(); }));
@@ -175,5 +204,5 @@
     if (clr) clr.onclick = () => { filters.splice(0); rerender(); };
   }
 
-  g.Filters = { apply, render, newFilter, comparable, isActive };
+  g.Filters = { apply, render, newFilter, comparable, isActive, describe };
 })(typeof window !== 'undefined' ? window : globalThis);

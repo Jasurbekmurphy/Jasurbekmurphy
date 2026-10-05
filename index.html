@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
   <header class="top">
@@ -18,6 +18,7 @@
       <button class="tab" data-tab="p-db">Baza</button>
       <button class="tab" data-tab="p-fill">To'ldirish</button>
       <button class="tab" data-tab="p-table">Jadval</button>
+      <button class="tab" data-tab="p-comp">Korxonalar</button>
     </nav>
   </header>
 
@@ -60,17 +61,24 @@
         <div id="tb-body"></div>
       </div>
     </section>
+    <section class="panel" id="p-comp" hidden>
+      <div class="box">
+        <h2>Korxonalar</h2>
+        <p class="muted small">Har bir korxonada qaysi guruhdan nechta o'quvchi borligi. "Shartnoma" tugmasini bosib korxona va o'quvchi shartnomasini belgilang — belgilar saqlanadi va "Jadval" bo'limida filtr sifatida ham ishlaydi.</p>
+        <div id="comp-body"></div>
+      </div>
+    </section>
   </main>
 
   <div id="toast" class="toast"></div>
 
-  <script src="vendor/xlsx.full.min.js?v=3"></script>
-  <script src="vendor/jszip.min.js?v=3"></script>
-  <script src="js/match.js?v=3"></script>
-  <script src="js/xlsxfill.js?v=3"></script>
-  <script src="js/xlsxwrite.js?v=3"></script>
-  <script src="js/filters.js?v=3"></script>
-  <script src="js/sync.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="vendor/xlsx.full.min.js?v=4"></script>
+  <script src="vendor/jszip.min.js?v=4"></script>
+  <script src="js/match.js?v=4"></script>
+  <script src="js/xlsxfill.js?v=4"></script>
+  <script src="js/xlsxwrite.js?v=4"></script>
+  <script src="js/filters.js?v=4"></script>
+  <script src="js/sync.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>
