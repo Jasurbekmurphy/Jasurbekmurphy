@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Jadval Baza</title>
+  <meta name="description" content="Excel jadvaldan ma'lumotlar bazasi: boshqa jadvallarni avtomatik to'ldirish">
+  <meta name="theme-color" content="#1f6f5c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Jadval Baza</h1>
+    <nav class="tabs">
+      <button class="tab" data-tab="p-db">Baza</button>
+      <button class="tab" data-tab="p-fill">To'ldirish</button>
+      <button class="tab" data-tab="p-browse">Qidirish</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="panel" id="p-db">
+      <div class="box">
+        <h2>Asosiy jadval</h2>
+        <div id="db-status"></div>
+        <label class="file primary">
+          <input type="file" id="master-file" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          Asosiy jadvalni yuklash / yangilash
+        </label>
+        <p class="muted small">Jadvalga o'zgartirish kiritganingizdan keyin shu yerga qayta yuklang — baza yangilanadi va nima o'zgargani ko'rsatiladi.</p>
+        <div id="db-actions" class="row-btns" hidden>
+          <button id="db-download">Asosiy jadvalni yuklab olish</button>
+          <button id="db-clear" class="danger">Bazani o'chirish</button>
+        </div>
+      </div>
+      <div class="box" id="db-pending" hidden></div>
+      <p class="muted small privacy">🔒 Ma'lumotlar faqat shu qurilmaning brauzerida saqlanadi va hech qayerga yuborilmaydi. Internet bo'lmasa ham ishlaydi.</p>
+    </section>
+
+    <section class="panel" id="p-fill" hidden>
+      <div class="box">
+        <h2>Boshqa jadvalni to'ldirish</h2>
+        <p class="muted small">Topshiriq bilan kelgan bo'sh jadvalni (.xlsx) yuklang. Ustun nomlari bo'yicha bazadan kerakli ma'lumot avtomatik qo'yiladi; faylning ko'rinishi, formatlari, boshqa varaqlari o'zgarmaydi.</p>
+        <label class="file primary">
+          <input type="file" id="tpl-file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          Jadvalni tanlash
+        </label>
+      </div>
+      <div class="box" id="tpl-body" hidden></div>
+    </section>
+
+    <section class="panel" id="p-browse" hidden>
+      <div class="box">
+        <input type="search" id="browse-q" placeholder="Ism, JShShIR, telefon, guruh…">
+        <div id="browse-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="js/match.js"></script>
+  <script src="js/xlsxfill.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

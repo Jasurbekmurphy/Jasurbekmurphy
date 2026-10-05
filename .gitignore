@@ -1,0 +1,6 @@
+# Shaxsiy ma'lumotli Excel fayllar repozitoriyga tushmasin
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+node_modules/
