@@ -121,7 +121,8 @@ function detectMasterHeader(sheet) {
     counts.push(sheet.grid[r].filter((v) => typeof v === 'string').length);
   }
   const max = Math.max(0, ...counts);
-  const r = counts.findIndex((n) => n >= 3 && n >= 0.6 * max);
+  // Kichik fayllar (masalan, faqat F.I.Sh va JShShIR) uchun 2 ta sarlavha ham yetarli
+  const r = counts.findIndex((n) => n >= Math.min(3, Math.max(2, max)) && n >= 0.6 * max);
   return r < 0 ? 0 : r;
 }
 
@@ -157,7 +158,9 @@ function buildMaster(sheet, headerRow) {
     const filled = vals.filter((v) => v != null);
     if (!filled.length || filled.every(isX) || isNumberingRow(raw)) continue;
     if (nameIdx >= 0 && vals[nameIdx] == null) continue;
-    if (nameIdx < 0 && filled.length < 3) continue;
+    if (nameIdx < 0 && filled.length < Math.min(3, fields.length)) continue;
+    // JShShIR raqam bo'lib saqlangan bo'lsa — matnga (bazadagi bilan bir xil ko'rinishda)
+    if (jIdx >= 0 && typeof vals[jIdx] === 'number') vals[jIdx] = String(Math.round(vals[jIdx]));
     rows.push(vals);
   }
   return { fields, rows, nameIdx, keyIdx: jIdx >= 0 ? jIdx : nameIdx, headerRow };
@@ -333,8 +336,13 @@ function renderPending() {
           <div class="warn"><b>${plan.updatedRows}</b><span>yangilanadi (${plan.updatedCells} katak)</span></div>
           <div><b>${plan.db.rows.length}</b><span>jami bo'ladi</span></div>
         </div>
-        ${plan.newFields.length ? `<p class="small">Yangi ustunlar qo'shiladi: ${plan.newFields.map((f) => `<b>${esc(f.label)}</b>`).join(', ')}</p>` : ''}
-        ${plan.changes.length ? `<details><summary>Yangilanadigan qiymatlar</summary><ul class="difflist">${plan.changes.slice(0, 100).map((c) =>
+        <details ${plan.newFields.length ? 'open' : ''}><summary>Ustunlar mosligi (fayl → baza)</summary>
+          <ul class="small maplist-mini">${plan.mapping.map((m) => `<li>${esc(m.from)} → ${m.to ? `<b>${esc(m.to)}</b>` : '<span class="warn">yangi ustun sifatida qo\'shiladi</span>'}</li>`).join('')}</ul>
+        </details>
+        ${plan.byNameN ? `<p class="small muted">${plan.byNameN} ta o'quvchi JShShIR'siz — ism-familiya bo'yicha topildi.</p>` : ''}
+        ${plan.addedNames.length ? `<details><summary>Yangi qo'shiladigan o'quvchilar (${plan.added})</summary><ul class="small">${plan.addedNames.map((n) => `<li>${esc(n ?? '')}</li>`).join('')}</ul>
+          <p class="small muted">Faylda yo'q ustunlar (guruh, telefon va h.k.) bo'sh qoladi — keyin Tahrirlash bo'limida to'ldirasiz.</p></details>` : ''}
+        ${plan.changes.length ? `<details ${plan.changes.length <= 30 ? 'open' : ''}><summary>Yangilanadigan qiymatlar (${plan.updatedCells})</summary><ul class="difflist">${plan.changes.slice(0, 100).map((c) =>
           `<li><b>${esc(c.name)}</b><div class="small">${esc(c.field)}: <s>${esc(c.from ?? '—')}</s> → ${esc(c.to)}</div></li>`).join('')}</ul></details>` : ''}`;
     } else {
       const diff = diffMasters(state.db, p);

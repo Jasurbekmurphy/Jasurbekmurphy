@@ -85,16 +85,29 @@ function parseInputValue(raw, old) {
 
 // ---------------------------------------------------------------- Birlashtirish (merge)
 // Yangi fayldagi ustunlarni bazadagi ustunlarga moslash (nom bo'yicha, kirill/lotin farqisiz)
+// Kalit ustunlar (F.I.Sh, JShShIR) har qanday yozilishda ham bir-biriga mos keladi
+const KEY_CANONS = ['jshshir', 'fish'];
+function fieldScore(of, nf) {
+  if (of.label === nf.label) return 1.01;
+  const a = Match.canon(of.name), b = Match.canon(nf.name);
+  for (const k of KEY_CANONS) {
+    const ka = a.includes(k), kb = b.includes(k);
+    if (ka && kb) return 1;          // ikkalasi ham shu kalit
+    if (ka !== kb) return 0;         // biri kalit, ikkinchisi emas — moslanmaydi
+  }
+  return Match.similarity(of.name, nf.name);
+}
+
 function mapFields(oldDb, newDb) {
   const used = new Set();
   return newDb.fields.map((nf) => {
     let best = -1, score = 0;
     oldDb.fields.forEach((of, i) => {
       if (used.has(i)) return;
-      const s = of.label === nf.label ? 1.01 : Match.similarity(of.name, nf.name);
+      const s = fieldScore(of, nf);
       if (s > score) { score = s; best = i; }
     });
-    if (score >= 0.8) { used.add(best); return best; }
+    if (score >= 0.75) { used.add(best); return best; }
     return -1;
   });
 }
@@ -110,32 +123,44 @@ function mergePlan(oldDb, newDb) {
   const keyOf = (db, r) => rowKey(db, r);
   const index = new Map();
   rows.forEach((r, i) => { const k = keyOf(oldDb, r); if (k) index.set(k, i); });
-  let added = 0, updatedRows = 0, updatedCells = 0;
-  const changes = [];
+  // Zaxira: JShShIR bo'lmasa — ism-familiya bo'yicha (faqat bittasi mos kelsa)
+  const oName = oldDb.nameIdx, nName = newDb.nameIdx;
+  const byName = new Map();
+  if (oName >= 0) rows.forEach((r, i) => { const k = Match.nameKey(r[oName]); if (k) byName.set(k, byName.has(k) ? -1 : i); });
+  const nJ = jIndex(newDb);
+  let added = 0, updatedRows = 0, updatedCells = 0, byNameN = 0;
+  const changes = [], addedNames = [];
   for (const nr of newDb.rows) {
     const k = keyOf(newDb, nr);
-    const at = k ? index.get(k) : undefined;
+    let at = k ? index.get(k) : undefined;
+    const noJ = nJ < 0 || !Match.digits(nr[nJ]);
+    if (at === undefined && noJ && nName >= 0) {
+      const hit = byName.get(Match.nameKey(nr[nName]));
+      if (hit != null && hit >= 0) { at = hit; byNameN++; }
+    }
     if (at === undefined) {
-      const row = Array(width).fill(null);
+      const row = Array(width).fill(null);   // faylda yo'q ustunlar bo'sh qoladi
       nr.forEach((v, i) => { row[target[i]] = v; });
       rows.push(row);
       if (k) index.set(k, rows.length - 1);
       added++;
+      if (addedNames.length < 300) addedNames.push(nName >= 0 ? nr[nName] : k);
       continue;
     }
     const row = rows[at];
     let n = 0;
     nr.forEach((v, i) => {
-      if (v == null || String(v).trim() === '') return;
+      if (v == null || String(v).trim() === '') return;   // bo'sh qiymat bazadagini o'chirmaydi
       const t = target[i];
       if (String(row[t] ?? '') !== String(v)) {
-        if (changes.length < 200) changes.push({ name: row[oldDb.nameIdx >= 0 ? oldDb.nameIdx : 0], field: fields[t].label, from: row[t], to: v });
+        if (changes.length < 300) changes.push({ name: row[oName >= 0 ? oName : 0], field: fields[t].label, from: row[t], to: v });
         row[t] = v; n++;
       }
     });
     if (n) { updatedRows++; updatedCells += n; }
   }
-  return { db: { ...oldDb, fields, rows }, added, updatedRows, updatedCells, newFields, changes };
+  const mapping = newDb.fields.map((f, i) => ({ from: f.label, to: map[i] >= 0 ? oldDb.fields[map[i]].label : null }));
+  return { db: { ...oldDb, fields, rows }, added, updatedRows, updatedCells, newFields, changes, addedNames, mapping, byNameN };
 }
 
 // ---------------------------------------------------------------- TAHRIRLASH paneli (Excel'ga o'xshash jadval)

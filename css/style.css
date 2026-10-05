@@ -490,3 +490,4 @@ table.glist td.wrap { white-space: normal; }
 .inst-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e8eefc; color: #2d4fa3; white-space: nowrap; }
 .comp.inst { border-left-color: #4a6fd1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .inst-badge { background: #1b2847; color: #a9bff5; } }
+.maplist-mini { margin: 6px 0; padding-left: 18px; } .maplist-mini li { margin: 2px 0; }
