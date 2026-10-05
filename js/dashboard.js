@@ -1,4 +1,4 @@
-/* global companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -114,10 +114,12 @@ function renderDashboard() {
   const compList = comp ? comp.list.filter((c) => compKeys.has(c.key) && !c.inst) : [];
   const compN = compList.length;
   const compWith = compList.filter((c) => c.contract).length;
+  const orderWith = compList.filter((c) => c.order).length;
   const stuWith = raw.filter((r) => studentContract(r).on).length;
   const instN = raw.filter((r) => studentContract(r).na).length;
   const need = total - instN;
   const iss = jshshirIssues(state.db);
+  const spellN = Spell.scan(state.db).length;
   const problems = iss.bad.length + iss.dups.length;
   const groupsN = gi >= 0 ? new Set(rows.map((r) => r[gi]).filter((v) => v != null)).size : 0;
 
@@ -125,11 +127,11 @@ function renderDashboard() {
     kpi({ id: 'total', label: "Jami o'quvchilar", icon: '👥', value: total, sub: groupsN ? `${groupsN} ta guruh` : '' }),
     working != null && kpi({ id: 'work', label: 'Ishlaydiganlar (oylik oladi)', icon: '💼', value: working, of: total, pct: pct(working), sub: `${Math.round(pct(working))}% · bosib ro'yxatni oching` }),
     stays != null && kpi({ id: 'stay', label: 'Korxonada ishda qoladi', icon: '🏭', value: stays, of: total, pct: pct(stays), sub: `${Math.round(pct(stays))}%` }),
-    comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `korxona shartnomasi bor: ${compWith} ta`, pct: compN ? (compWith / compN) * 100 : 0 }),
+    comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `🤝 hamkorlik: ${compWith} · 📋 buyruq: ${orderWith}`, pct: compN ? (compWith / compN) * 100 : 0 }),
     kpi({ id: 'stuc', label: "O'quvchi shartnomasi", icon: '📄', value: stuWith, of: need, pct: need ? (stuWith / need) * 100 : 0,
       sub: `${need - stuWith} ta o'quvchida yo'q` + (instN ? ` · 🎓 ${instN} ta ta'lim muassasasida` : ''), status: stuWith === need ? 'ok' : 'warn' }),
     kpi({ id: 'issues', label: "Ma'lumotdagi xatolar", icon: problems ? '⚠️' : '✓', value: problems, status: problems ? 'bad' : 'ok',
-      sub: problems ? `JShShIR xato: ${iss.bad.length} · dublikat: ${iss.dups.length}` : 'JShShIR hammasi to\'g\'ri' }),
+      sub: (problems ? `JShShIR xato: ${iss.bad.length} · dublikat: ${iss.dups.length}` : 'JShShIR hammasi to\'g\'ri') + (spellN ? ` · ✍️ imlo: ${spellN}` : '') }),
   ].filter(Boolean);
 
   const sortNum = (a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true });
@@ -209,7 +211,7 @@ function renderDashboard() {
       if (i >= 0) openTableWith(stay, String(state.view.rows[i][stay]));
     }
     else if (id === 'comp') showTab('p-comp');
-    else if (id === 'stuc') openTableWith(state.view.fields.length - 1, '−');
+    else if (id === 'stuc') openTableWith(state.view.fields.findIndex((f) => f.virtual && f.name === "O'quvchi shartnomasi"), '−');
     else if (id === 'issues') { editUi.mode = iss.bad.length ? 'bad' : iss.dups.length ? 'dup' : 'all'; renderEdit(); showTab('p-edit'); }
     else showTab('p-table');
   }));

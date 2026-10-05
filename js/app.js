@@ -309,6 +309,18 @@ function renderPending() {
   if (!p.mode) p.mode = state.db ? 'merge' : 'replace';
   const nm = (db, r) => esc(r[db.nameIdx >= 0 ? db.nameIdx : 0] ?? '');
 
+  // Imlo tekshiruvi (yuklashda avtomatik tuzatiladi)
+  if (p.spellFix === undefined) p.spellFix = true;
+  const spell = Spell.scan(p);
+  // Oldindan ko'rish ham tuzatilgan qiymatlar bo'yicha hisoblansin
+  const fixedP = p.spellFix && spell.length ? { ...p, rows: p.rows.map((r) => r.slice()) } : p;
+  if (fixedP !== p) for (const it of spell) fixedP.rows[it.ri][it.fi] = it.to;
+  const spellHtml = spell.length ? `
+    <div class="spell-box">
+      <label class="check" style="margin:0"><input type="checkbox" id="pending-spell" ${p.spellFix ? 'checked' : ''}> <span>✍️ <b>${spell.length} ta imlo xatosi</b> topildi — yuklashda avtomatik tuzatilsin</span></label>
+      <details><summary class="small">Ro'yxatni ko'rish</summary><ul class="small sp-ul">${spell.slice(0, 120).map((it) => `<li><s>${esc(it.from)}</s> → <b>${esc(it.to)}</b></li>`).join('')}${spell.length > 120 ? `<li class="muted">…va yana ${spell.length - 120} ta</li>` : ''}</ul></details>
+    </div>` : '<p class="small ok">✍️ Imlo xatolari topilmadi</p>';
+
   // Tekshiruv: yangi fayldagi JShShIR
   const iss = jshshirIssues(p);
   const checkHtml = iss.ji < 0 ? '<p class="warn small">Faylda JShShIR ustuni topilmadi.</p>' : `
@@ -330,7 +342,7 @@ function renderPending() {
         ? "Yangi o'quvchilar qo'shiladi, borlarining ma'lumoti yangilanadi. Bazadagi hech kim o'chirilmaydi, ilovada qilingan tahrirlar saqlanadi."
         : "Baza butunlay shu fayl bilan almashtiriladi. Faylda yo'q o'quvchilar o'chadi, ilovada qilingan tahrirlar yo'qoladi."}</p>`;
     if (p.mode === 'merge') {
-      const plan = mergePlan(state.db, p);
+      const plan = mergePlan(state.db, fixedP);
       p.plan = plan;
       planHtml = `
         <div class="stats">
@@ -347,7 +359,7 @@ function renderPending() {
         ${plan.changes.length ? `<details ${plan.changes.length <= 30 ? 'open' : ''}><summary>Yangilanadigan qiymatlar (${plan.updatedCells})</summary><ul class="difflist">${plan.changes.slice(0, 100).map((c) =>
           `<li><b>${esc(c.name)}</b><div class="small">${esc(c.field)}: <s>${esc(c.from ?? '—')}</s> → ${esc(c.to)}</div></li>`).join('')}</ul></details>` : ''}`;
     } else {
-      const diff = diffMasters(state.db, p);
+      const diff = diffMasters(state.db, fixedP);
       planHtml = `
         <div class="stats">
           <div class="ok"><b>+${diff.added.length}</b><span>yangi</span></div>
@@ -367,6 +379,7 @@ function renderPending() {
     </label>
     <p><b>${p.rows.length}</b> ta yozuv, <b>${p.fields.length}</b> ta ustun topildi (sarlavha ${p.headerRow + 1}-qatorda).</p>
     <h4>Tekshiruv</h4>
+    ${spellHtml}
     ${checkHtml}
     ${modeHtml}
     ${planHtml}
@@ -381,9 +394,15 @@ function renderPending() {
   };
   box.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { p.mode = b.dataset.m; renderPending(); }));
   $('#pending-cancel').onclick = () => { state.pending = null; renderPending(); };
+  const sp = $('#pending-spell');
+  if (sp) sp.onchange = () => { p.spellFix = sp.checked; renderPending(); };
   $('#pending-save').onclick = async () => {
     let db;
+    if (p.spellFix) {
+      for (const it of Spell.scan(p)) p.rows[it.ri][it.fi] = it.to;
+    }
     if (state.db && p.mode === 'merge') {
+      p.plan = mergePlan(state.db, p);
       db = { ...p.plan.db, fileName: p.fileName, file: p.file, importedAt: Date.now() };
     } else {
       db = { ...p, importedAt: Date.now() };
@@ -944,9 +963,15 @@ function dbFieldIdx(...keys) {
 
 function studentKey(row) { return rowKey(state.db, row); }
 
+// 1) Hamkorlik shartnomasi (korxona bilan)
 function companyContract(name) {
   const m = state.marks.comp[companyKey(name)];
   return !!(m && m.c);
+}
+// 3) Korxona buyrug'i (korxona o'ziga biriktirilgan o'quvchilarga chiqargan buyruq — korxonada bitta)
+function companyOrder(name) {
+  const m = state.marks.comp[companyKey(name)];
+  return !!(m && m.o);
 }
 
 // "Ta'lim muassasasida" (3-toifa) o'quvchilar o'qishda bo'ladi — shartnoma talab qilinmaydi
@@ -977,10 +1002,12 @@ function computeView() {
   const fields = db.fields.concat([
     { col: -1, name: 'Korxona shartnomasi', label: 'Korxona shartnomasi (+/−)', virtual: true },
     { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true },
+    { col: -1, name: "Korxona buyrug'i", label: "Korxona buyrug'i (+/−)", virtual: true },
   ]);
   const rows = db.rows.map((r) => r.concat([
     ci >= 0 && r[ci] != null ? (isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
     (() => { const sc = studentContract(r); return sc.na ? INST_LABEL : sc.on ? '+' : '−'; })(),
+    ci >= 0 && r[ci] != null ? (isInstitutionName(r[ci]) ? INST_LABEL : companyOrder(r[ci]) ? '+' : '−') : null,
   ]));
   // Kirill/lotin: korxona nomi ustunidan boshqa hamma matn o'giriladi
   const sc = state.script;
@@ -1001,6 +1028,7 @@ async function marksChanged() {
   await saveLocal();
   computeView();
   renderCompanies();
+  renderDashboard();
   if (state.table) renderTable(); // filtrdagi "+/−" qiymatlar ham yangilansin
   if (state.tpl) renderTemplate();
   clearTimeout(marksTimer);
@@ -1037,7 +1065,7 @@ function companyGroups() {
     const withContract = c.rows.filter((r) => studentContract(r).on).length;
     const need = c.rows.filter((r) => !studentContract(r).na).length;
     const inst = isInstitutionName(name);
-    return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && companyContract(name), withContract };
+    return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && companyContract(name), order: !inst && companyOrder(name), withContract };
   });
   list.sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
   return { list, gi };
@@ -1069,9 +1097,11 @@ function renderCompanies() {
   if (q) list = list.filter((c) => Match.norm(c.name).includes(q) || c.rows.some((r) => Match.norm(r[nameIdx]).includes(q)));
   if (ui.show === 'yes') list = list.filter((c) => c.contract);
   if (ui.show === 'no') list = list.filter((c) => !c.contract && !c.inst);
+  if (ui.show === 'noorder') list = list.filter((c) => !c.order && !c.inst);
   const students = all.reduce((n, c) => n + c.need, 0);
   const stuWith = all.reduce((n, c) => n + c.withContract, 0);
   const compWith = all.filter((c) => c.contract).length;
+  const orderWith = all.filter((c) => c.order).length;
   const instN = all.filter((c) => c.inst).reduce((n, c) => n + c.rows.length, 0) + all.filter((c) => !c.inst).reduce((n, c) => n + c.rows.length - c.need, 0);
   const realComps = all.filter((c) => !c.inst).length;
 
@@ -1082,25 +1112,29 @@ function renderCompanies() {
     if (q) gr = gr.filter((r) => Match.norm(r[nameIdx]).includes(q) || Match.norm(r[cfi]).includes(q));
     if (ui.show === 'yes') gr = gr.filter((r) => cfi >= 0 && r[cfi] && companyContract(r[cfi]));
     if (ui.show === 'no') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyContract(r[cfi])));
+    if (ui.show === 'noorder') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyOrder(r[cfi])));
     return `
       <div class="row-btns" style="margin-top:0">
         <button data-allgroup="1">Guruhning hammasiga o'quvchi shartnomasi ＋</button>
         <button data-allgroup="0">Hammasiga −</button>
       </div>
       <div class="scroll" style="margin-top:12px"><table class="prev stu glist">
-        <thead><tr><th>№</th><th>F.I.Sh</th><th>O'quvchi shartnomasi</th><th>Korxona</th><th>Korxona shartnomasi</th></tr></thead>
+        <thead><tr><th>№</th><th>F.I.Sh</th><th>📄 O'quvchi shartnomasi</th><th>Korxona</th><th>🤝 Hamkorlik</th><th>📋 Buyruq</th></tr></thead>
         <tbody>${gr.map((r, i) => {
           const sc = studentContract(r);
           const comp = cfi >= 0 ? r[cfi] : null;
           const cc = comp ? companyContract(comp) : false;
+          const co = comp ? companyOrder(comp) : false;
+          const instC = comp && isInstitutionName(comp);
           return `<tr>
             <td>${i + 1}</td>
             <td class="wrap"><b>${esc(r[nameIdx])}</b></td>
             <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
             <td class="wrap">${comp ? esc(comp) : '<span class="muted">—</span>'}</td>
-            <td>${comp && isInstitutionName(comp) ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${instC ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${instC ? '' : comp ? `<button class="ct sm ${co ? 'on' : ''}" data-okey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${co ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="5" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
+        }).join('') || '<tr><td colspan="6" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
       </table></div>`;
   };
 
@@ -1116,22 +1150,26 @@ function renderCompanies() {
     </div>` : ''}
     <div class="stats">
       <div><b>${realComps}</b><span>korxona</span></div>
-      <div class="ok"><b>${compWith}</b><span>korxona shartnomasi bor</span></div>
+      <div class="ok"><b>${compWith}</b><span>🤝 hamkorlik shartnomasi</span></div>
+      <div class="ok"><b>${orderWith}</b><span>📋 korxona buyrug'i</span></div>
       <div class="${stuWith < students ? 'warn' : 'ok'}"><b>${stuWith}/${students}</b><span>o'quvchi shartnomasi</span></div>
       ${instN ? `<div><b>${instN}</b><span>🎓 ta'lim muassasasida</span></div>` : ''}
     </div>
     <input type="search" id="comp-q" placeholder="Korxona yoki o'quvchi nomi…" value="${esc(ui.q)}">
     <div class="seg wide" id="comp-show">
       <button data-show="all" class="${ui.show === 'all' ? 'on' : ''}">Hammasi (${all.length})</button>
-      <button data-show="yes" class="${ui.show === 'yes' ? 'on' : ''}">Shartnoma bor (${compWith})</button>
-      <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Shartnoma yo'q (${realComps - compWith})</button>
+      <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Hamkorlik yo'q (${realComps - compWith})</button>
+      <button data-show="noorder" class="${ui.show === 'noorder' ? 'on' : ''}">Buyruq yo'q (${realComps - orderWith})</button>
     </div>
     ${ui.group && ui.view === 'list' ? groupList() : `<div class="comp-list">${list.map((c) => `
-      <details class="comp ${c.contract ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
+      <details class="comp ${c.contract && c.order ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
         <summary>
           <div class="comp-top">
             <div class="comp-name">${esc(c.name)}</div>
-            ${c.inst ? '<span class="inst-badge">🎓 Ta\'lim muassasasi · shartnoma shart emas</span>' : `<button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan shartnoma">${c.contract ? '＋ Shartnoma bor' : "− Shartnoma yo'q"}</button>`}
+            ${c.inst ? '<span class="inst-badge">🎓 Ta\'lim muassasasi · shartnoma shart emas</span>' : `<div class="docs">
+              <button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan hamkorlik shartnomasi">🤝 Hamkorlik ${c.contract ? '＋' : '−'}</button>
+              <button class="ct ${c.order ? 'on' : ''}" data-okey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxonaning o'quvchilarga chiqargan buyrug'i">📋 Buyruq ${c.order ? '＋' : '−'}</button>
+            </div>`}
           </div>
           <div class="comp-sub">
             <span>👥 ${c.rows.length} o'quvchi</span>
@@ -1176,6 +1214,13 @@ function renderCompanies() {
     state.marks.comp[k] = { ...cur, c: !cur.c, name: b.dataset.cname, at: Date.now() };
     marksChanged();
   }));
+  box.querySelectorAll('[data-okey]').forEach((b) => (b.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const k = b.dataset.okey;
+    const cur = state.marks.comp[k] || {};
+    state.marks.comp[k] = { ...cur, o: !cur.o, name: b.dataset.cname, at: Date.now() };
+    marksChanged();
+  }));
   box.querySelectorAll('[data-skey]').forEach((b) => (b.onclick = () => {
     state.marks.stu[b.dataset.skey] = b.dataset.on !== '1';
     marksChanged();
@@ -1203,9 +1248,9 @@ function renderCompanies() {
   }));
   $('#comp-xl').onclick = async () => {
     const rows = list.map((c, i) => [i + 1, c.name, c.rows.length, c.groups.map(([gname, n]) => `${gname} (${n})`).join(', '),
-      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, [...c.people.keys()].join('; ')]);
+      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.inst ? INST_LABEL : c.order ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, [...c.people.keys()].join('; ')]);
     const blob = await XlsxWrite.buildWorkbook({ title: 'Korxonalar ro\'yxati', sheetName: 'Korxonalar',
-      headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Korxona shartnomasi', "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
+      headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Hamkorlik shartnomasi', "Korxona buyrug'i", "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
     downloadBlob(blob, 'Korxonalar.xlsx');
   };
 }

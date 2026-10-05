@@ -1,4 +1,4 @@
-/* global Filters, state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
+/* global Spell, Filters, state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
 'use strict';
 // Bazani ilovaning o'zida tahrirlash, tekshiruv (JShShIR), korxona nomlarini tartiblash,
 // va yangi jadvalni bazaga birlashtirish (merge).
@@ -190,12 +190,15 @@ function renderIssueTabs() {
   const iss = jshshirIssues(state.db);
   const tab = (mode, label, n, cls) => `<button class="issue-tab ${editUi.mode === mode ? 'on' : ''} ${n && cls ? cls : ''}" data-mode="${mode}">${label} <span class="n">${n}</span></button>`;
   const sugg = companySuggestions(state.db).length;
+  const spellN = Spell.scan(state.db).length;
   el.innerHTML = tab('all', 'Hamma o\'quvchilar', state.db.rows.length) +
     tab('bad', 'JShShIR xato', iss.bad.length, 'has-bad') +
     tab('dup', 'Takroriy JShShIR', iss.dups.length, 'has-bad') +
+    `<button class="issue-tab ${spellN ? 'has-warn' : ''}" id="ed-spell">✍️ Imlo xatolari <span class="n">${spellN}</span></button>` +
     `<button class="issue-tab ${sugg ? 'has-warn' : ''}" id="ed-comp">Korxona nomlarini tartiblash <span class="n">${sugg}</span></button>`;
   el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { editUi.mode = b.dataset.mode; editUi.page = 0; renderEdit(); }));
   $('#ed-comp').onclick = openCompanyDialog;
+  $('#ed-spell').onclick = openSpellDialog;
 }
 
 // Joriy filtr/qidiruv/rejimga mos qatorlar (indekslari)
@@ -498,5 +501,64 @@ function openCompanyDialog() {
     }
     dlg.close();
     await dbChanged(`${pick.size} ta nom tartiblandi (${n} ta katak) ✓`);
+  };
+}
+
+// ---------------------------------------------------------------- Imlo xatolarini tuzatish
+// Korxona nomi o'zgarsa — shartnoma belgilari va mas'ul biriktirilishini yangi nomga ko'chirish
+function migrateCompany(from, to) {
+  const a = companyKey(from), b = companyKey(to);
+  if (a === b) return;
+  if (state.marks.comp[a] && !state.marks.comp[b]) { state.marks.comp[b] = { ...state.marks.comp[a], name: to }; delete state.marks.comp[a]; }
+  if (state.resp && state.resp.assign[a] && !state.resp.assign[b]) { state.resp.assign[b] = state.resp.assign[a]; delete state.resp.assign[a]; }
+}
+
+function applySpell(db, issues) {
+  const ci = db.fields.findIndex((f) => Match.canon(f.name).includes('korxonanomi'));
+  const moved = new Set();
+  for (const it of issues) {
+    if (it.fi === ci && !moved.has(it.from)) { migrateCompany(it.from, it.to); moved.add(it.from); }
+    db.rows[it.ri][it.fi] = it.to;
+  }
+}
+
+function openSpellDialog() {
+  const db = state.db;
+  const issues = Spell.scan(db);
+  if (!issues.length) { toast("Imlo xatolari topilmadi ✓", 'ok'); return; }
+  const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
+  const byField = new Map();
+  issues.forEach((it, i) => { if (!byField.has(it.fi)) byField.set(it.fi, []); byField.get(it.fi).push(i); });
+  const SHOW = 150;
+  const dlg = dialog(`
+    <div class="dlg-form">
+      <div class="dlg-head"><h3>✍️ Imlo xatolari: ${issues.length} ta</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
+      <div class="dlg-body" style="display:block">
+        <p class="muted small">Ortiqcha bo'shliqlar, kirill so'z ichidagi lotin harflari (yoki aksincha), F.I.Sh dagi katta-kichik harflar va "қизи / ўғли" yozilishi tuzatiladi. Keraksizini belgidan chiqaring.</p>
+        ${[...byField].map(([fi, idxs]) => `
+          <details class="sp-group" ${byField.size <= 3 ? 'open' : ''}>
+            <summary><label class="sp-all" onclick="event.stopPropagation()"><input type="checkbox" data-gall="${fi}" checked></label> <b>${esc(db.fields[fi].label)}</b> <span class="muted">— ${idxs.length} ta</span></summary>
+            <div class="sp-list">${idxs.slice(0, SHOW).map((i) => {
+              const it = issues[i];
+              return `<label class="sp-row"><input type="checkbox" data-si="${i}" data-g="${fi}" checked>
+                <span><span class="muted small">${fi === nameIdx ? '' : esc(db.rows[it.ri][nameIdx] ?? '') + ': '}</span><s>${esc(it.from)}</s> → <b>${esc(it.to)}</b></span></label>`;
+            }).join('')}${idxs.length > SHOW ? `<p class="fl-note">…va yana ${idxs.length - SHOW} ta (guruh belgilangan bo'lsa, ular ham tuzatiladi)</p>` : ''}</div>
+          </details>`).join('')}
+      </div>
+      <div class="dlg-foot"><span class="grow"></span>
+        <button type="button" data-close>Bekor qilish</button>
+        <button type="button" class="primary" data-apply>Tuzatish</button></div>
+    </div>`);
+  dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
+  dlg.querySelectorAll('[data-gall]').forEach((cb) => (cb.onchange = () => {
+    dlg.querySelectorAll(`[data-g="${cb.dataset.gall}"]`).forEach((x) => (x.checked = cb.checked));
+  }));
+  dlg.querySelector('[data-apply]').onclick = async () => {
+    const off = new Set([...dlg.querySelectorAll('[data-si]')].filter((x) => !x.checked).map((x) => +x.dataset.si));
+    const groupOff = new Set([...dlg.querySelectorAll('[data-gall]')].filter((x) => !x.checked).map((x) => +x.dataset.gall));
+    const pick = issues.filter((it, i) => !off.has(i) && !groupOff.has(it.fi));
+    applySpell(db, pick);
+    dlg.close();
+    await dbChanged(`${pick.length} ta imlo xatosi tuzatildi ✓`);
   };
 }
