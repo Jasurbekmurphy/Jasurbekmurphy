@@ -21,14 +21,27 @@ bo'lmasa ham ishlaydi.
      chegaralar, birlashtirilgan kataklar, formulalar, boshqa varaqlar o'zgarmaydi —
      faqat ma'lumot yozilgan kataklar o'zgaradi. Telefonda "Ulashish" tugmasi orqali
      to'g'ridan-to'g'ri Telegramga yuborish mumkin.
-3. **Qidirish** — bazadan ism, JShShIR, telefon, guruh bo'yicha tez qidirish.
+3. **Jadval** — ixtiyoriy jadval yaratish:
+   - **filtrlar**: qiymat tanlash, "bo'sh emas / bo'sh", "matn ichida", **oraliq (dan–gacha)**
+     (sana, guruh, raqam uchun); shartlar **VA / YOKI** bilan bog'lanadi;
+   - tayyor filtrlar: **⚡ Ishlaydiganlar (oylik oladi)**, **⚡ Korxonada ishda qoladi**;
+   - ustunlarni tanlash, tartibini o'zgartirish, saralash, natijadan qatorlar oralig'i, sarlavha;
+   - chiroyli formatlangan Excel (chegaralar, muzlatilgan sarlavha, avtofiltr) yuklab olish;
+   - tez-tez kerak bo'ladigan jadvalni **shablon** qilib saqlash;
+   - tez qidirish va qatorni bosib odamning barcha ma'lumotini ko'rish.
+4. **☁️ Bulutli baza (kod bilan)** — bazani boshqa kompyuter va telefonda ochish.
 
 ## Xavfsizlik
 
-Ma'lumotlar (pasport, JShShIR, telefon) **faqat sizning qurilmangiz brauzerida**
-(IndexedDB) saqlanadi va hech qanday serverga yuborilmaydi. Excel fayllar
-repozitoriyga tushmasligi uchun `.gitignore` da taqiqlangan. Har bir qurilmada
-(kompyuter, telefon) asosiy jadvalni bir marta yuklash kerak.
+- Ma'lumotlar (pasport, JShShIR, telefon) qurilmaning brauzerida (IndexedDB) saqlanadi.
+- Bulut yoqilsa, baza **qurilmaning o'zida AES-256-GCM bilan shifrlanadi** (kalit kirish
+  kodidan PBKDF2-SHA256, 600 000 iteratsiya bilan olinadi) va repozitoriyga faqat
+  shifrlangan `data/baza.enc` fayli yoziladi. Kodsiz bu faylni o'qib bo'lmaydi.
+- GitHub tokeni ham shu shifrlangan fayl ichida — boshqa qurilmada faqat kod kerak.
+- **Kod uzun va murakkab bo'lsin** (kamida 12 belgi, harf + raqam + belgi). Fayl ochiq
+  repozitoriyda turgani uchun oddiy kodni taxmin qilib topish mumkin.
+- Begona kompyuterda "Shu qurilmada eslab qolish" belgisini olib tashlang.
+- Excel fayllar repozitoriyga tushmasligi uchun `.gitignore` da taqiqlangan.
 
 ## Ishga tushirish
 
@@ -37,8 +50,7 @@ repozitoriy *Settings → Pages → Branch* da shu branchni tanlang. Keyin
 `https://<foydalanuvchi>.github.io/<repo>/` manzilini telefonda oching va brauzer
 menyusidan **"Bosh ekranga qo'shish"** ni bosing — ilova kabi ochiladi va oflayn ishlaydi.
 
-**Kompyuterda lokal:** papkada `python3 -m http.server` ni ishga tushirib,
-`http://localhost:8000` ni oching (yoki `index.html` ni to'g'ridan-to'g'ri oching).
+Manzil: https://jasurbekmurphy.github.io/Jasurbekmurphy/
 
 ## Tuzilishi
 
@@ -48,5 +60,8 @@ menyusidan **"Bosh ekranga qo'shish"** ni bosing — ilova kabi ochiladi va ofla
 | `js/app.js` | baza, import/yangilash, moslashtirish, to'ldirish |
 | `js/match.js` | ustun nomlarini solishtirish (kirill ↔ lotin) |
 | `js/xlsxfill.js` | .xlsx faylga faqat kerakli kataklarni yozish |
+| `js/xlsxwrite.js` | yangi formatlangan .xlsx jadval yaratish |
+| `js/filters.js` | filtrlar (qiymat, bo'sh, matn, oraliq, VA/YOKI) |
+| `js/sync.js` | shifrlash va GitHub orqali bulutli baza |
 | `sw.js`, `manifest.webmanifest` | oflayn ishlash va telefonga o'rnatish |
 | `vendor/` | SheetJS (o'qish) va JSZip kutubxonalari |

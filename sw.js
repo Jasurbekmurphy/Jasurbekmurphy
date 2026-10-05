@@ -1,7 +1,7 @@
 // Oflayn ishlash uchun: ilova fayllari keshda saqlanadi.
-const CACHE = 'jadval-baza-v1';
+const CACHE = 'jadval-baza-v2';
 const FILES = [
-  './', 'index.html', 'css/style.css', 'js/app.js', 'js/match.js', 'js/xlsxfill.js',
+  './', 'index.html', 'css/style.css', 'js/app.js', 'js/match.js', 'js/xlsxfill.js', 'js/xlsxwrite.js', 'js/filters.js', 'js/sync.js',
   'vendor/xlsx.full.min.js', 'vendor/jszip.min.js', 'manifest.webmanifest', 'icon.svg',
 ];
 self.addEventListener('install', (e) => {

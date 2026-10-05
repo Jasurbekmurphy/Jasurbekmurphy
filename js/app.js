@@ -206,6 +206,9 @@ const state = {
   db: null,        // { fields, rows, nameIdx, keyIdx, sheetName, fileName, importedAt, file }
   pending: null,   // tasdiqlanmagan yangi import
   tpl: null,       // to'ldiriladigan shablon
+  templates: [],   // saqlangan jadval shablonlari
+  table: null,     // "Jadval" panelidagi joriy sozlama
+  cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
 };
 
 // ---------------------------------------------------------------- Tablar
@@ -289,37 +292,14 @@ function renderPending() {
   $('#pending-save').onclick = async () => {
     const db = { ...state.pending, importedAt: Date.now() };
     delete db.sheetNames;
-    await Store.set('db', db);
     state.db = db;
     state.pending = null;
+    await saveLocal();
     renderPending();
-    renderDbStatus();
-    renderBrowse();
-    if (state.tpl) renderTemplate();
+    onDbChanged();
     toast('Baza saqlandi ✓', 'ok');
+    cloudPush();
   };
-}
-
-// ---------------------------------------------------------------- KO'RISH paneli
-function renderBrowse() {
-  const list = $('#browse-list');
-  const db = state.db;
-  if (!db) { list.innerHTML = '<p class="muted">Baza bo\'sh.</p>'; return; }
-  const q = Match.norm($('#browse-q').value);
-  const qd = Match.digits($('#browse-q').value);
-  let rows = db.rows;
-  if (q) {
-    rows = rows.filter((r) => r.some((v) => v != null && (Match.norm(v).includes(q) ||
-      (qd.length >= 3 && Match.digits(v).includes(qd)))));
-  }
-  const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
-  const show = rows.slice(0, 100);
-  list.innerHTML = `<p class="muted small">${rows.length} ta natija${rows.length > show.length ? ` (birinchi ${show.length} tasi)` : ''}</p>` +
-    show.map((r) => `
-      <details class="card">
-        <summary><b>${esc(r[nameIdx])}</b><span class="small muted">${esc(db.keyIdx !== nameIdx ? r[db.keyIdx] ?? '' : '')}</span></summary>
-        <table class="kv">${db.fields.map((f, i) => r[i] == null ? '' : `<tr><th>${esc(f.label)}</th><td>${esc(r[i])}</td></tr>`).join('')}</table>
-      </details>`).join('');
 }
 
 // ---------------------------------------------------------------- TO'LDIRISH paneli
@@ -434,9 +414,7 @@ function countKeyValues(col) {
 }
 
 function filteredRows() {
-  const db = state.db;
-  return db.rows.filter((r) => state.tpl.filters.every((f) => f.field === '' || f.values.length === 0 ||
-    f.values.includes(String(r[f.field] ?? ''))));
+  return Filters.apply(state.db.rows, state.tpl.filters);
 }
 
 function buildLookupIndex(idx) {
@@ -511,42 +489,7 @@ function fieldOptions(selected) {
 }
 
 function renderFilters() {
-  const t = state.tpl, db = state.db;
-  const box = $('#tpl-filters');
-  box.innerHTML = t.filters.map((f, fi) => {
-    let valuesHtml = '';
-    if (f.field !== '') {
-      const counts = new Map();
-      for (const r of db.rows) { const v = String(r[f.field] ?? ''); counts.set(v, (counts.get(v) || 0) + 1); }
-      valuesHtml = `<div class="chips">${[...counts].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })).map(([v, n]) =>
-        `<label class="chip"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.includes(v) ? 'checked' : ''}> ${esc(v || '(bo\'sh)')} <span class="muted">${n}</span></label>`).join('')}</div>`;
-    }
-    return `<div class="filter">
-      <div class="filter-head">
-        <select data-fi="${fi}" class="filter-field">
-          <option value="">Ustunni tanlang…</option>
-          ${db.fields.map((x, i) => `<option value="${i}" ${f.field === i ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
-        </select>
-        <button class="icon" data-rm="${fi}" title="O'chirish">✕</button>
-      </div>${valuesHtml}</div>`;
-  }).join('');
-  box.querySelectorAll('.filter-field').forEach((s) => (s.onchange = () => {
-    const f = t.filters[+s.dataset.fi];
-    f.field = s.value === '' ? '' : +s.value;
-    f.values = [];
-    renderFilters();
-    renderPreview();
-  }));
-  box.querySelectorAll('input[type=checkbox]').forEach((cb) => (cb.onchange = () => {
-    const f = t.filters[+cb.dataset.fi];
-    f.values = cb.checked ? [...f.values, cb.value] : f.values.filter((v) => v !== cb.value);
-    renderPreview();
-  }));
-  box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => {
-    t.filters.splice(+b.dataset.rm, 1);
-    renderFilters();
-    renderPreview();
-  }));
+  Filters.render($('#tpl-filters'), state.db, state.tpl.filters, renderPreview);
 }
 
 function renderTemplate() {
@@ -590,9 +533,8 @@ function renderTemplate() {
 
     <div id="tpl-filter-wrap" ${t.mode === 'lookup' ? 'hidden' : ''}>
       <h4>Filtr (ixtiyoriy)</h4>
-      <p class="muted small">Masalan: faqat 50-guruh yoki faqat "Дуал" ta'lim shakli.</p>
+      <p class="muted small">Masalan: faqat 50-guruh, faqat ishlaydiganlar yoki tug'ilgan sanasi oralig'i.</p>
       <div id="tpl-filters"></div>
-      <button id="tpl-add-filter">+ Filtr qo'shish</button>
     </div>
     <label class="check"><input type="checkbox" id="tpl-onlyempty" ${t.onlyEmpty !== false ? 'checked' : ''}> Faqat bo'sh kataklarni to'ldirish (bor ma'lumotni o'chirmaslik)</label>
 
@@ -615,7 +557,6 @@ function renderTemplate() {
     s.closest('.maprow').classList.toggle('on', s.value !== '');
     renderPreview();
   }));
-  $('#tpl-add-filter').onclick = () => { t.filters.push({ field: '', values: [] }); renderFilters(); };
   $('#tpl-go').onclick = generate;
   renderFilters();
   renderPreview();
@@ -670,39 +611,464 @@ async function generate() {
   }
 }
 
+// ---------------------------------------------------------------- Umumiy: saqlash va yangilash
+async function saveLocal() {
+  const c = state.cloud;
+  if (c.session && !c.remember) {
+    // "Eslab qolmaslik" rejimi: bu qurilmada hech narsa qoldirilmaydi
+    await Store.del('db');
+    await Store.del('templates');
+    return;
+  }
+  if (state.db) await Store.set('db', state.db); else await Store.del('db');
+  await Store.set('templates', state.templates);
+}
+
+function onDbChanged() {
+  renderDbStatus();
+  if (state.db && !state.table) state.table = defaultTable();
+  renderTable();
+  if (state.tpl && state.db) renderTemplate();
+  renderCloud();
+}
+
+// ---------------------------------------------------------------- JADVAL paneli (ixtiyoriy jadval)
+function findFieldIdx(...keys) {
+  return state.db.fields.findIndex((f) => keys.some((k) => Match.canon(f.name).includes(k)));
+}
+
+function defaultTable() {
+  const db = state.db;
+  const cols = [db.nameIdx, findFieldIdx('gurux', 'guruh'), findFieldIdx('telefon')].filter((i, k, a) => i >= 0 && a.indexOf(i) === k);
+  return { q: '', filters: [], cols: cols.length ? cols : db.fields.map((_, i) => i).slice(0, 5), num: true, sort: '', dir: 1, title: '', from: '', to: '' };
+}
+
+// Shablonlar ustun nomi bilan saqlanadi — asosiy jadvalda ustunlar tartibi o'zgarsa ham ishlaydi
+function toPortable(t) {
+  const lab = (i) => (i === '' || i == null ? '' : state.db.fields[i]?.label);
+  return { ...t, q: '', cols: t.cols.map(lab), sort: lab(t.sort), filters: t.filters.map((f) => ({ ...f, field: lab(f.field) })) };
+}
+function fromPortable(t) {
+  const idx = (l) => (l === '' || l == null ? '' : state.db.fields.findIndex((f) => f.label === l));
+  return {
+    ...defaultTable(), ...t, q: '',
+    cols: t.cols.map(idx).filter((i) => i !== '' && i >= 0),
+    sort: idx(t.sort) >= 0 ? idx(t.sort) : '',
+    filters: t.filters.map((f) => ({ ...f, field: idx(f.field) })).filter((f) => f.field !== '' && f.field >= 0),
+  };
+}
+
+function tableRows() {
+  const t = state.table, db = state.db;
+  let rows = Filters.apply(db.rows, t.filters);
+  const q = Match.norm(t.q), qd = Match.digits(t.q);
+  if (q) rows = rows.filter((r) => r.some((v) => v != null && (Match.norm(v).includes(q) || (qd.length >= 3 && Match.digits(v).includes(qd)))));
+  if (t.sort !== '') {
+    const k = t.sort;
+    rows = [...rows].sort((a, b) => {
+      const x = Filters.comparable(a[k]), y = Filters.comparable(b[k]);
+      const c = x != null && y != null ? x - y : String(a[k] ?? '').localeCompare(String(b[k] ?? ''), 'uz', { numeric: true });
+      return c * t.dir;
+    });
+  }
+  const from = parseInt(t.from, 10), to = parseInt(t.to, 10);
+  if (from > 0 || to > 0) rows = rows.slice(from > 0 ? from - 1 : 0, to > 0 ? to : undefined);
+  return rows;
+}
+
+function renderTable() {
+  const box = $('#tb-body');
+  if (!state.db) { box.innerHTML = '<p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p>'; return; }
+  const t = state.table, db = state.db;
+  const unused = db.fields.map((_, i) => i).filter((i) => !t.cols.includes(i) && !db.fields[i].num);
+  box.innerHTML = `
+    ${state.templates.length ? `<h4>Saqlangan jadvallar</h4><div class="presets">${state.templates.map((tp, i) =>
+      `<span class="tpl-chip"><button class="chip-btn" data-load="${i}">📋 ${esc(tp.name)}</button><button class="icon" data-del="${i}" title="O'chirish">✕</button></span>`).join('')}</div>` : ''}
+    <input type="search" id="tb-q" placeholder="Tez qidirish: ism, JShShIR, telefon…" value="${esc(t.q)}">
+    <details class="sect" open><summary><h4>Filtr</h4></summary><div id="tb-filters"></div></details>
+    <details class="sect"><summary><h4>Ustunlar <span class="muted small">(${t.cols.length} ta tanlangan)</span></h4></summary>
+      <label class="check"><input type="checkbox" id="tb-num" ${t.num ? 'checked' : ''}> Boshida № (tartib raqami) ustuni</label>
+      <div class="collist">${t.cols.map((c, k) => `
+        <div class="colrow"><span class="grow">${k + 1}. ${esc(db.fields[c].label)}</span>
+          <button class="icon" data-up="${k}" ${k ? '' : 'disabled'} title="Yuqoriga">↑</button>
+          <button class="icon" data-down="${k}" ${k < t.cols.length - 1 ? '' : 'disabled'} title="Pastga">↓</button>
+          <button class="icon" data-rmcol="${k}" title="Olib tashlash">✕</button></div>`).join('')}</div>
+      ${unused.length ? `<select id="tb-addcol"><option value="">+ Ustun qo'shish…</option>${unused.map((i) => `<option value="${i}">${esc(db.fields[i].label)}</option>`).join('')}</select>` : ''}
+      <div class="row-btns"><button id="tb-allcols">Hamma ustunlar</button><button id="tb-nocols">Tozalash</button></div>
+    </details>
+    <details class="sect"><summary><h4>Saralash, oraliq, sarlavha</h4></summary>
+      <div class="grid2">
+        <label>Saralash
+          <select id="tb-sort"><option value="">Bazadagi tartibda</option>${db.fields.map((f, i) => f.num ? '' : `<option value="${i}" ${t.sort === i ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
+        </label>
+        <label>Yo'nalish
+          <select id="tb-dir"><option value="1" ${t.dir === 1 ? 'selected' : ''}>O'sish (A→Я, 1→9)</option><option value="-1" ${t.dir === -1 ? 'selected' : ''}>Kamayish</option></select>
+        </label>
+        <label>Natijadan: qatordan
+          <input type="number" id="tb-from" min="1" value="${esc(t.from)}" placeholder="1">
+        </label>
+        <label>qatorgacha
+          <input type="number" id="tb-to" min="1" value="${esc(t.to)}" placeholder="oxirigacha">
+        </label>
+      </div>
+      <label>Jadval sarlavhasi (ixtiyoriy)
+        <input type="search" id="tb-title" value="${esc(t.title)}" placeholder="Masalan: 50-guruh ishlaydigan o'quvchilar ro'yxati">
+      </label>
+    </details>
+    <div id="tb-result"></div>`;
+
+  const upd = () => renderTableResult();
+  Filters.render($('#tb-filters'), db, t.filters, upd);
+  $('#tb-q').oninput = (e) => { t.q = e.target.value; upd(); };
+  $('#tb-num').onchange = (e) => { t.num = e.target.checked; upd(); };
+  $('#tb-sort').onchange = (e) => { t.sort = e.target.value === '' ? '' : +e.target.value; upd(); };
+  $('#tb-dir').onchange = (e) => { t.dir = +e.target.value; upd(); };
+  $('#tb-from').oninput = (e) => { t.from = e.target.value; upd(); };
+  $('#tb-to').oninput = (e) => { t.to = e.target.value; upd(); };
+  $('#tb-title').oninput = (e) => { t.title = e.target.value; };
+  const keepOpen = () => {
+    const open = [...box.querySelectorAll('details.sect')].map((d) => d.open);
+    renderTable();
+    box.querySelectorAll('details.sect').forEach((d, i) => (d.open = open[i]));
+  };
+  box.querySelectorAll('[data-up]').forEach((b) => (b.onclick = () => { const k = +b.dataset.up; [t.cols[k - 1], t.cols[k]] = [t.cols[k], t.cols[k - 1]]; keepOpen(); }));
+  box.querySelectorAll('[data-down]').forEach((b) => (b.onclick = () => { const k = +b.dataset.down; [t.cols[k + 1], t.cols[k]] = [t.cols[k], t.cols[k + 1]]; keepOpen(); }));
+  box.querySelectorAll('[data-rmcol]').forEach((b) => (b.onclick = () => { t.cols.splice(+b.dataset.rmcol, 1); keepOpen(); }));
+  const add = $('#tb-addcol');
+  if (add) add.onchange = () => { if (add.value !== '') { t.cols.push(+add.value); keepOpen(); } };
+  $('#tb-allcols').onclick = () => { t.cols = db.fields.map((_, i) => i).filter((i) => !db.fields[i].num); keepOpen(); };
+  $('#tb-nocols').onclick = () => { t.cols = []; keepOpen(); };
+  box.querySelectorAll('[data-load]').forEach((b) => (b.onclick = () => {
+    state.table = fromPortable(state.templates[+b.dataset.load]);
+    renderTable();
+    toast('"' + state.templates[+b.dataset.load].name + '" ochildi');
+  }));
+  box.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
+    const tp = state.templates[+b.dataset.del];
+    if (!confirm('"' + tp.name + '" shabloni o\'chirilsinmi?')) return;
+    state.templates.splice(+b.dataset.del, 1);
+    await saveLocal();
+    renderTable();
+    cloudPush();
+  }));
+  renderTableResult();
+}
+
+function renderTableResult() {
+  const t = state.table, db = state.db;
+  const rows = tableRows();
+  const show = rows.slice(0, 50);
+  const heads = (t.num ? ['№'] : []).concat(t.cols.map((c) => db.fields[c].name));
+  $('#tb-result').innerHTML = `
+    <h4>Natija: ${rows.length} ta</h4>
+    ${t.cols.length ? `<div class="scroll"><table class="prev"><thead><tr>${heads.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${show.map((r, i) => `<tr data-ri="${db.rows.indexOf(r)}">${t.num ? `<td>${i + 1}</td>` : ''}${t.cols.map((c) => `<td>${esc(r[c] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      ${rows.length > show.length ? `<p class="muted small">Ko'rinishda birinchi ${show.length} tasi. Excel faylda hammasi (${rows.length} ta) bo'ladi.</p>` : ''}
+      <p class="muted small">Qatorni bossangiz, o'sha odamning barcha ma'lumoti ochiladi.</p>`
+    : '<p class="bad">Kamida bitta ustun tanlang.</p>'}
+    <div class="row-btns">
+      <button class="primary" id="tb-dl" ${t.cols.length && rows.length ? '' : 'disabled'}>Excel yuklab olish</button>
+      <button id="tb-save">Shablon sifatida saqlash</button>
+      <button id="tb-share" hidden>Ulashish (Telegram…)</button>
+    </div>`;
+  $('#tb-result').querySelectorAll('tbody tr[data-ri]').forEach((tr) => (tr.onclick = () => {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('detail')) { next.remove(); return; }
+    const r = db.rows[+tr.dataset.ri];
+    const d = document.createElement('tr');
+    d.className = 'detail';
+    d.innerHTML = `<td colspan="${heads.length}"><table class="kv">${db.fields.map((f, i) => r[i] == null ? '' : `<tr><th>${esc(f.label)}</th><td>${esc(r[i])}</td></tr>`).join('')}</table></td>`;
+    tr.after(d);
+  }));
+  $('#tb-dl').onclick = downloadTable;
+  $('#tb-save').onclick = async () => {
+    const name = prompt('Shablon nomi (masalan: "50-guruh ishlaydiganlar"):', t.title || '');
+    if (!name) return;
+    const tp = { ...toPortable(t), name };
+    const ex = state.templates.findIndex((x) => x.name === name);
+    if (ex >= 0) state.templates[ex] = tp; else state.templates.push(tp);
+    await saveLocal();
+    renderTable();
+    toast('Shablon saqlandi ✓', 'ok');
+    cloudPush();
+  };
+}
+
+async function downloadTable() {
+  const t = state.table, db = state.db;
+  const rows = tableRows();
+  const headers = (t.num ? ['№'] : []).concat(t.cols.map((c) => db.fields[c].name));
+  const data = rows.map((r, i) => (t.num ? [i + 1] : []).concat(t.cols.map((c) => r[c] ?? null)));
+  const blob = await XlsxWrite.buildWorkbook({ title: t.title.trim(), sheetName: t.title.trim() || 'Jadval', headers, rows: data });
+  const name = (t.title.trim() || 'Jadval').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80) + '.xlsx';
+  downloadBlob(blob, name);
+  toast(`Tayyor: ${rows.length} ta qator ✓`, 'ok');
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const b = $('#tb-share');
+    b.hidden = false;
+    b.onclick = () => navigator.share({ files: [file], title: name }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------- BULUT (kod bilan)
+function cloudPayload() {
+  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, db: { ...state.db, file: Sync.toB64(state.db.file) } };
+}
+
+async function applyPayload(p) {
+  const file = Sync.fromB64(p.db.file);
+  state.db = { ...p.db, file: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) };
+  state.templates = p.templates || [];
+  state.cloud.token = p.token || state.cloud.token;
+  state.table = null;
+  await saveLocal();
+}
+
+async function saveCloudState() {
+  const c = state.cloud;
+  if (!c.session || !c.remember) { await Store.del('cloud'); return; }
+  await Store.set('cloud', { key: c.session.key, salt: c.session.salt, iter: c.session.iter, token: c.token, sha: c.sha, dirty: c.dirty, at: c.at });
+}
+
+let pushing = null;
+async function cloudPush() {
+  const c = state.cloud;
+  if (!c.session || !state.db) return;
+  if (pushing) { c.again = true; return; }
+  c.again = false;
+  pushing = (async () => {
+    try {
+      c.status = 'Yuborilmoqda…';
+      renderCloud();
+      const text = await Sync.seal(c.session, cloudPayload());
+      c.sha = await Sync.putRemote(c.token, text, c.sha);
+      c.dirty = false;
+      c.at = Date.now();
+      c.status = '';
+      toast('Bulutga saqlandi ☁️ ✓', 'ok');
+    } catch (e) {
+      c.dirty = true;
+      c.status = 'Yuborilmadi: ' + e.message;
+      toast('Bulutga yuborilmadi: ' + e.message, 'err');
+    }
+    await saveCloudState();
+    renderCloud();
+  })();
+  await pushing;
+  pushing = null;
+  if (c.again) cloudPush(); // yuborish paytida yana o'zgarish bo'lgan
+}
+
+async function cloudPull(manual) {
+  const c = state.cloud;
+  if (!c.session) return;
+  try {
+    const remote = await Sync.fetchRemote(c.token);
+    if (!remote) { if (manual) toast('Bulutda baza topilmadi', 'err'); return; }
+    if (remote.sha === c.sha && state.db) { if (manual) toast('Baza allaqachon eng yangi ✓', 'ok'); return; }
+    let opened;
+    try {
+      opened = await Sync.open(remote.text, null, c.session.key);
+    } catch (e) {
+      // Kod boshqa qurilmada o'zgartirilgan — qaytadan kod so'raladi
+      c.session = null;
+      await saveCloudState();
+      renderCloud();
+      toast('Bulutdagi baza kodi o\'zgargan. Yangi kodni kiriting.', 'err');
+      return;
+    }
+    await applyPayload(opened.payload);
+    c.sha = remote.sha;
+    c.at = Date.now();
+    await saveCloudState();
+    onDbChanged();
+    toast('Baza bulutdan yangilandi ☁️ ✓', 'ok');
+  } catch (e) {
+    if (manual) toast(e.message, 'err');
+  }
+}
+
+async function cloudOpen(code, remember) {
+  const c = state.cloud;
+  const remote = await Sync.fetchRemote('');
+  if (!remote) throw new Error('Bulutda baza hali yo\'q');
+  const { payload, session } = await Sync.open(remote.text, code);
+  c.session = session;
+  c.remember = remember;
+  c.sha = remote.sha;
+  c.at = Date.now();
+  c.dirty = false;
+  await applyPayload(payload);
+  await saveCloudState();
+  onDbChanged();
+  toast('Baza ochildi ✓', 'ok');
+}
+
+async function cloudSetup(code, token, remember) {
+  const c = state.cloud;
+  c.session = await Sync.newSession(code);
+  c.token = token.trim();
+  c.remember = remember;
+  try {
+    c.sha = await Sync.remoteSha(c.token);
+  } catch (e) {
+    c.session = null;
+    throw e;
+  }
+  await saveLocal();
+  await cloudPush();
+  if (c.dirty) { c.session = null; await saveCloudState(); renderCloud(); throw new Error(c.status || 'Yuborilmadi'); }
+}
+
+function renderCloud() {
+  const box = $('#cloud-box');
+  const c = state.cloud;
+  if (c.session) {
+    box.innerHTML = `
+      <h2>☁️ Bulutli baza <span class="badge ok">ulangan</span></h2>
+      <p class="muted small">Baza shifrlangan holda saqlanadi. Boshqa kompyuter yoki telefonda shu sahifani ochib, kodni kiritsangiz bo'ldi.
+      ${c.at ? `<br>Oxirgi sinxronlash: ${new Date(c.at).toLocaleString('uz')}` : ''}
+      ${c.remember ? '' : '<br><b>Bu qurilmada eslab qolinmaydi</b> — sahifa yopilganda ma\'lumot o\'chadi.'}</p>
+      ${c.status ? `<p class="${c.dirty ? 'bad' : 'muted'} small">${esc(c.status)}</p>` : ''}
+      <div class="row-btns">
+        <button id="cl-pull">Bulutdan yangilash</button>
+        <button id="cl-push" class="${c.dirty ? 'primary' : ''}">Bulutga yuborish</button>
+      </div>
+      <details><summary class="small">Boshqa amallar</summary>
+        <div class="row-btns">
+          <button id="cl-recode">Kodni o'zgartirish</button>
+          <button id="cl-logout" class="danger">Bu qurilmadan chiqish</button>
+        </div>
+      </details>`;
+    $('#cl-pull').onclick = () => cloudPull(true);
+    $('#cl-push').onclick = () => cloudPush();
+    $('#cl-recode').onclick = async () => {
+      const a = prompt('Yangi kod (kamida 8 belgi):');
+      if (!a) return;
+      if (a.length < 8) { toast('Kod kamida 8 belgidan iborat bo\'lsin', 'err'); return; }
+      if (prompt('Yangi kodni qaytadan kiriting:') !== a) { toast('Kodlar mos kelmadi', 'err'); return; }
+      c.session = await Sync.newSession(a);
+      await cloudPush();
+      await saveCloudState();
+      toast('Kod o\'zgartirildi. Boshqa qurilmalarda yangi kodni kiriting.', 'ok');
+    };
+    $('#cl-logout').onclick = async () => {
+      if (!confirm('Bu qurilmadan baza va kod o\'chirilsinmi? (Bulutdagi baza saqlanib qoladi)')) return;
+      state.cloud = { session: null, token: '', sha: null, remember: true, dirty: false, remote: true };
+      state.db = null; state.templates = []; state.table = null;
+      await Store.del('cloud'); await Store.del('db'); await Store.del('templates');
+      onDbChanged();
+    };
+    return;
+  }
+
+  if (c.remote === undefined) {
+    box.innerHTML = '<h2>☁️ Bulutli baza</h2><p class="muted small">Tekshirilmoqda…</p>';
+    return;
+  }
+  const openForm = `
+    <form id="cl-open" class="stack">
+      <label>Kirish kodi<input type="password" id="cl-code" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" id="cl-remember" checked> Shu qurilmada eslab qolish (begona kompyuterda belgini olib tashlang)</label>
+      <button class="primary" type="submit">Bazani ochish</button>
+    </form>`;
+  const setupForm = `
+    <form id="cl-setup" class="stack">
+      ${state.db ? '' : '<p class="bad small">Avval yuqorida asosiy jadvalni yuklang.</p>'}
+      <label>Yangi kirish kodi (kamida 8 belgi, harf va raqam aralash)<input type="password" id="cs-code" autocomplete="new-password" minlength="8" required></label>
+      <label>Kodni takrorlang<input type="password" id="cs-code2" autocomplete="new-password" minlength="8" required></label>
+      <label>GitHub token <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">(yaratish)</a><input type="password" id="cs-token" autocomplete="off" required placeholder="github_pat_…"></label>
+      <details class="small"><summary>Token qanday yaratiladi?</summary>
+        <ol>
+          <li>"yaratish" havolasini oching (GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token).</li>
+          <li><b>Token name</b>: istalgan nom, masalan "Jadval Baza". <b>Expiration</b>: 1 yil.</li>
+          <li><b>Repository access</b>: "Only select repositories" → <b>${esc(Sync.CONFIG.repo)}</b>.</li>
+          <li><b>Permissions → Repository permissions → Contents</b>: "Read and write".</li>
+          <li><b>Generate token</b> ni bosing va chiqqan tokenni shu yerga qo'ying.</li>
+        </ol>
+        Token faqat bir marta kiritiladi: u ham baza bilan birga shifrlanib saqlanadi, boshqa qurilmalarda faqat kod kerak bo'ladi.</details>
+      <label class="check"><input type="checkbox" id="cs-remember" checked> Shu qurilmada eslab qolish</label>
+      <button class="primary" type="submit" ${state.db ? '' : 'disabled'}>Bulutni sozlash va bazani yuborish</button>
+    </form>`;
+  box.innerHTML = `
+    <h2>☁️ Bulutli baza</h2>
+    ${c.remote
+      ? `<p class="muted small">Bulutda shifrlangan baza bor. Ochish uchun kodni kiriting.</p>${openForm}
+         <details class="small"><summary>Kodni unutdim / qaytadan sozlash</summary>
+           <p class="muted">Yangi kod bilan sozlansa, bulutdagi eski baza shu qurilmadagi baza bilan almashtiriladi.</p>${setupForm}</details>`
+      : `<p class="muted small">Bazani boshqa kompyuter va telefonda ham ochish uchun bir marta sozlang. Ma'lumot shu qurilmada shifrlanadi va GitHub'ga faqat shifrlangan holda yoziladi — kodsiz uni hech kim o'qiy olmaydi.</p>${setupForm}`}`;
+
+  const of = $('#cl-open');
+  if (of) of.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = of.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Ochilmoqda…';
+    try { await cloudOpen($('#cl-code').value, $('#cl-remember').checked); } catch (err) { toast(err.message, 'err'); btn.disabled = false; btn.textContent = 'Bazani ochish'; }
+  };
+  const sf = $('#cl-setup');
+  if (sf) sf.onsubmit = async (e) => {
+    e.preventDefault();
+    const code = $('#cs-code').value;
+    if (code !== $('#cs-code2').value) { toast('Kodlar mos kelmadi', 'err'); return; }
+    if (code.length < 8) { toast('Kod kamida 8 belgidan iborat bo\'lsin', 'err'); return; }
+    if (c.remote && !confirm('Bulutdagi baza shu qurilmadagi baza bilan almashtirilsinmi?')) return;
+    const btn = sf.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Yuborilmoqda…';
+    try {
+      await cloudSetup(code, $('#cs-token').value, $('#cs-remember').checked);
+      renderCloud();
+    } catch (err) {
+      toast(err.message, 'err');
+      btn.disabled = false; btn.textContent = 'Bulutni sozlash va bazani yuborish';
+    }
+  };
+}
+
 // ---------------------------------------------------------------- Ishga tushirish
 async function init() {
   document.querySelectorAll('.tab').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
   let tab = 'p-db';
   try { tab = localStorage.getItem('tab') || tab; } catch (e) { /* ixtiyoriy */ }
+  if (!$('#' + tab)) tab = 'p-db';
 
   $('#master-file').onchange = (e) => { if (e.target.files[0]) onMasterFile(e.target.files[0]); e.target.value = ''; };
   $('#tpl-file').onchange = (e) => { if (e.target.files[0]) onTemplateFile(e.target.files[0]); e.target.value = ''; };
-  $('#browse-q').oninput = renderBrowse;
   $('#db-download').onclick = () => {
     const db = state.db;
     downloadBlob(new Blob([db.file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), db.fileName);
   };
   $('#db-clear').onclick = async () => {
-    if (!confirm('Bazadagi barcha ma\'lumot shu qurilmadan o\'chirilsinmi?')) return;
+    if (!confirm('Bazadagi barcha ma\'lumot shu qurilmadan o\'chirilsinmi?' + (state.cloud.session ? ' (Bulutdagi nusxa saqlanib qoladi)' : ''))) return;
     await Store.del('db');
     state.db = null;
-    renderDbStatus();
-    renderBrowse();
+    state.table = null;
+    onDbChanged();
   };
 
   try {
     state.db = (await Store.get('db')) || null;
+    state.templates = (await Store.get('templates')) || [];
+    const saved = await Store.get('cloud');
+    if (saved && saved.key) {
+      Object.assign(state.cloud, { session: { key: saved.key, salt: saved.salt, iter: saved.iter }, token: saved.token, sha: saved.sha, dirty: !!saved.dirty, at: saved.at, remember: true });
+    }
   } catch (e) {
     toast('Brauzer xotirasiga kirib bo\'lmadi', 'err');
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  renderDbStatus();
-  renderBrowse();
+  onDbChanged();
   showTab(state.db ? tab : 'p-db');
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  // Bulut: ulangan bo'lsa — yangilanishni tekshirish; bo'lmasa — bulutda baza bormi
+  if (state.cloud.session) {
+    if (state.cloud.dirty) cloudPush(); else cloudPull(false);
+  } else {
+    Sync.remoteSha('').then((sha) => { state.cloud.remote = !!sha; }).catch(() => { state.cloud.remote = false; }).then(renderCloud);
   }
 }
 

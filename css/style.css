@@ -95,3 +95,35 @@ table.kv tr + tr { border-top: 1px solid var(--border); }
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
 .toast.err { background: var(--bad); color: #fff; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.chip-btn { min-height: 36px; padding: 6px 12px; border-radius: 999px; background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-size: 14px; }
+.tpl-chip { display: inline-flex; align-items: center; gap: 2px; }
+.join { display: flex; justify-content: center; margin: -2px 0 6px; }
+.join button { min-height: 30px; padding: 2px 14px; font-size: 12px; font-weight: 700; border-radius: 999px; }
+.join button.or { background: var(--warn); color: #fff; border-color: var(--warn); }
+.filter .filter-op { margin-top: 6px; }
+.filter > input[type=search] { margin-top: 6px; }
+.chip-search { margin-top: 6px; }
+.chip[hidden] { display: none; }
+.range { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.range input { flex: 1; min-width: 0; padding: 9px 10px; min-height: 42px; }
+details.sect { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 4px; }
+details.sect > summary { list-style: none; }
+details.sect > summary::-webkit-details-marker { display: none; }
+details.sect > summary h4 { display: inline-block; margin: 8px 0; }
+details.sect > summary::before { content: '▸ '; color: var(--muted); }
+details.sect[open] > summary::before { content: '▾ '; }
+.collist { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.colrow { display: flex; gap: 4px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 4px 4px 4px 10px; font-size: 14px; }
+.colrow .grow { flex: 1; word-break: break-word; }
+#tb-addcol, #tb-q { margin-top: 4px; }
+#tb-q { margin-bottom: 4px; }
+tbody tr[data-ri] { cursor: pointer; }
+tbody tr[data-ri]:hover { background: var(--accent-soft); }
+tr.detail td { white-space: normal; background: var(--bg); }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; vertical-align: middle; }
+.badge.ok { background: var(--accent-soft); color: var(--ok); }
+.stack { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.stack input[type=password] { width: 100%; padding: 9px 10px; min-height: 42px; }
+button:disabled { opacity: .5; cursor: default; }
+a { color: var(--accent); }
