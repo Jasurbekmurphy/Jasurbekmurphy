@@ -1,4 +1,4 @@
-/* global toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -178,6 +178,7 @@ function renderDashboard() {
     </div>
     <div class="courses">${courseCards}</div>` : ''}
     <div class="kpis">${kpis.join('')}</div>
+    <div id="dash-att">${dashAttHtml()}</div>
     <div class="box">
       <div class="chart-head"><h3>Tezkor amallar</h3><span>Oxirgi o'zgarish: ${d.toLocaleDateString('uz')} ${d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })}</span></div>
       <div class="quick">
@@ -209,6 +210,7 @@ function renderDashboard() {
     }
     openTableWith(fieldOf[id], v);
   }));
+  bindDashAtt();
   box.querySelectorAll('[data-kpi]').forEach((b) => (b.onclick = () => { try { kpiClick(b); } catch (e) { console.error(e); toast("Ochib bo'lmadi: " + e.message, 'err'); } }));
   function kpiClick(b) {
     const id = b.dataset.kpi;
@@ -224,3 +226,136 @@ function renderDashboard() {
     else showTab('p-table');
   }
 }
+
+// ---------------------------------------------------------------- Bugungi davomat
+const dashAtt = { data: null, date: '', at: 0, err: '', loading: false, hashing: false, timer: null };
+
+async function loadDashAtt() {
+  if (!botReady() || dashAtt.loading) return;
+  dashAtt.loading = true;
+  const date = tkToday();
+  try {
+    dashAtt.data = await botApi('/api/attendance?date=' + date);
+    dashAtt.date = date;
+    dashAtt.err = '';
+    dashAtt.at = Date.now();
+  } catch (e) {
+    dashAtt.err = e.message;
+  }
+  dashAtt.loading = false;
+  refreshDashAtt();
+}
+
+function refreshDashAtt() {
+  const el = $('#dash-att');
+  if (!el) return;
+  el.innerHTML = dashAttHtml();
+  bindDashAtt();
+}
+
+function dashAttModel() {
+  const ci = courseIdx();
+  const inCourse = (r) => !dashUi.course || ci < 0 || String(r[ci] ?? '').trim() === dashUi.course;
+  const { list } = attCompanies();
+  const items = new Map(((dashAtt.date === tkToday() && dashAtt.data && dashAtt.data.items) || []).map((x) => [x.ck, x]));
+  const people = new Map(state.resp.people.map((p) => [p.id, p]));
+  const per = new Map();
+  const tot = { comp: 0, went: 0, yes: 0, no: 0, none: 0, free: 0, freeStu: 0 };
+  for (const c of list) {
+    const rows = c.rows.filter(inCourse);
+    if (!rows.length) continue;
+    const pid = state.resp.assign[c.key];
+    if (!people.has(pid)) { tot.free++; tot.freeStu += rows.length; continue; }
+    const it = items.get(c.key);
+    if (!per.has(pid)) per.set(pid, { p: people.get(pid), comp: 0, went: 0, yes: 0, no: 0, none: 0, last: 0 });
+    const g = per.get(pid);
+    g.comp++; tot.comp++;
+    if (it) { g.went++; tot.went++; g.last = Math.max(g.last, it.at || 0); }
+    for (const r of rows) {
+      const v = it ? it.marks[hashCache.get(studentKey(r))] : undefined;
+      const k = v === 1 ? 'yes' : v === 0 ? 'no' : 'none';
+      g[k]++; tot[k]++;
+    }
+  }
+  const list2 = [...per.values()].map((g) => ({ ...g, st: g.went === g.comp ? 'ok' : g.went ? 'part' : 'none' }));
+  const order = { none: 0, part: 1, ok: 2 };
+  list2.sort((a, b) => order[a.st] - order[b.st] || a.p.name.localeCompare(b.p.name, 'uz'));
+  return { tot, list: list2 };
+}
+
+function dashAttHtml() {
+  if (!botReady() || !state.db) return '';
+  if (!state.resp.people.length) return '';
+  if (dashAtt.hashing || state.view.rows.some((r) => !hashCache.has(studentKey(r)))) {
+    if (!dashAtt.hashing) {
+      dashAtt.hashing = true;
+      Promise.all(state.view.rows.map(stuHash)).then(() => { dashAtt.hashing = false; refreshDashAtt(); });
+    }
+    return '<div class="box dash-att"><p class="muted">Davomat tayyorlanmoqda…</p></div>';
+  }
+  const { tot, list } = dashAttModel();
+  if (!list.length) return '';
+  const stu = tot.yes + tot.no + tot.none;
+  const pc = (n) => (stu ? (n / stu) * 100 : 0);
+  const time = (ms) => new Date(ms).toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' });
+  const pOk = list.filter((g) => g.st === 'ok').length, pPart = list.filter((g) => g.st === 'part').length, pNone = list.length - pOk - pPart;
+  const stLabel = { ok: '✅ Borgan', part: '🟡 Qisman borgan', none: '⬜ Bormagan · belgilanmagan' };
+  const status = dashAtt.err ? `<span class="bad">⚠ ${esc(dashAtt.err)}</span>`
+    : dashAtt.at ? `🟢 Jonli · ${time(dashAtt.at)}` : 'Yuklanmoqda…';
+  return `
+    <div class="box dash-att">
+      <div class="chart-head"><h3>📋 Bugungi davomat · ${esc(tkToday().split('-').reverse().join('.'))}</h3><span>${status}</span></div>
+      <div class="da-sum">
+        <div class="da-col">
+          <div class="da-h">Mas'ullar <b>${list.length}</b></div>
+          <div class="da-chips">
+            <span class="da-chip ok">✅ Borgan <b>${pOk}</b></span>
+            ${pPart ? `<span class="da-chip part">🟡 Qisman <b>${pPart}</b></span>` : ''}
+            <span class="da-chip none">⬜ Bormagan <b>${pNone}</b></span>
+          </div>
+          <div class="muted small">Korxonalar: ${tot.went} / ${tot.comp} ga borildi${tot.free ? ` · ${tot.free} tasiga mas'ul yo'q` : ''}</div>
+        </div>
+        <div class="da-col">
+          <div class="da-h">O'quvchilar <b>${stu}</b></div>
+          <div class="da-stack" role="img" aria-label="keldi ${tot.yes}, kelmadi ${tot.no}, belgilanmagan ${tot.none}">
+            <i class="ok" style="width:${pc(tot.yes)}%"></i><i class="bad" style="width:${pc(tot.no)}%"></i><i class="none" style="width:${pc(tot.none)}%"></i>
+          </div>
+          <div class="da-chips">
+            <span class="da-chip ok">✅ Keldi <b>${tot.yes}</b></span>
+            <span class="da-chip bad">❌ Kelmadi <b>${tot.no}</b></span>
+            <span class="da-chip none">⬜ Belgilanmagan <b>${tot.none}</b></span>
+          </div>
+        </div>
+      </div>
+      <div class="da-list">${list.map((g) => `
+        <button class="da-row ${g.st}" data-att-open="${esc(g.p.name)}">
+          <span class="da-name"><b>${esc(g.p.name)}</b><span class="da-st">${stLabel[g.st]}${g.last ? ' · ' + time(g.last) : ''}</span></span>
+          <span class="da-nums">
+            <span title="Korxonalar">🏢 ${g.went}/${g.comp}</span>
+            <span class="ok" title="Keldi">✅ ${g.yes}</span>
+            <span class="bad" title="Kelmadi">❌ ${g.no}</span>
+            <span class="none" title="Belgilanmagan">⬜ ${g.none}</span>
+          </span>
+        </button>`).join('')}</div>
+    </div>`;
+}
+
+function bindDashAtt() {
+  const el = $('#dash-att');
+  if (!el) return;
+  el.querySelectorAll('[data-att-open]').forEach((b) => (b.onclick = () => {
+    attUi.sub = 'att';
+    attUi.date = tkToday();
+    attUi.q = b.dataset.attOpen;
+    attUi.data = null; attUi.at = 0; attUi.err = '';
+    renderAttendance();
+    showTab('p-att');
+  }));
+  if (botReady() && state.resp.people.length && !dashAtt.loading && (!dashAtt.at || dashAtt.date !== tkToday() || Date.now() - dashAtt.at > 30000) && !dashAtt.err) loadDashAtt();
+}
+
+// Dashboard ochiq bo'lsa — har 30 soniyada yangilanadi
+dashAtt.timer = setInterval(() => {
+  const p = $('#p-dash');
+  if (p && !p.hidden && !document.hidden && botReady()) { dashAtt.err = ''; loadDashAtt(); }
+}, 30000);

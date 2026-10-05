@@ -429,8 +429,8 @@ details.sect[open] > summary::before { content: '▾ '; }
 .comp.has { border-left-color: var(--ok); }
 .comp > summary { list-style: none; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .comp > summary::-webkit-details-marker { display: none; }
-.comp-top { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
-.comp-name { font-weight: 700; word-break: break-word; }
+.comp-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.comp-name { font-weight: 700; word-break: break-word; flex: 1 1 160px; min-width: 0; }
 .comp-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
 .comp-sub .ok { color: var(--ok); } .comp-sub .warn { color: var(--warn); }
 .gchips { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -487,7 +487,7 @@ table.stu td.wrap { white-space: normal; min-width: 150px; }
 @media (max-width: 700px) { .grp-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .gbtn { flex: none; } }
 table.glist td { padding: 8px 10px; }
 table.glist td.wrap { white-space: normal; }
-.inst-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e8eefc; color: #2d4fa3; white-space: nowrap; }
+.inst-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; background: #e8eefc; color: #2d4fa3; white-space: normal; max-width: 100%; line-height: 1.35; }
 .comp.inst { border-left-color: #4a6fd1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .inst-badge { background: #1b2847; color: #a9bff5; } }
 .maplist-mini { margin: 6px 0; padding-left: 18px; } .maplist-mini li { margin: 2px 0; }
@@ -588,3 +588,22 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 @media (max-width: 700px) { .cg-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .cg-bar .gbtn { flex: none; } }
 .cat4-badge { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
 .stats .c4 b { color: var(--warn); }
+
+/* Dashboard: bugungi davomat */
+.dash-att .chart-head span .bad { color: var(--bad); }
+.da-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.da-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.da-h { font-size: 13px; color: var(--muted); font-weight: 600; } .da-h b { color: var(--text); font-size: 18px; margin-left: 4px; }
+.da-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.da-chip { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+.da-chip b { font-size: 14px; margin-left: 2px; }
+.da-chip.ok { color: var(--ok); } .da-chip.bad { color: var(--bad); } .da-chip.part { color: var(--warn); } .da-chip.none { color: var(--muted); }
+.da-stack { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--border); }
+.da-stack i { display: block; height: 100%; } .da-stack .ok { background: var(--ok); } .da-stack .bad { background: var(--bad); } .da-stack .none { background: transparent; }
+.da-list { display: flex; flex-direction: column; gap: 6px; }
+.da-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); border-left-width: 4px; background: var(--surface); min-height: 0; font: inherit; color: inherit; cursor: pointer; }
+.da-row.ok { border-left-color: var(--ok); } .da-row.part { border-left-color: var(--warn); } .da-row.none { border-left-color: var(--muted); }
+.da-name { display: flex; flex-direction: column; min-width: 0; flex: 1 1 180px; } .da-name b { word-break: break-word; }
+.da-st { font-size: 12px; color: var(--muted); }
+.da-nums { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.da-nums .ok { color: var(--ok); } .da-nums .bad { color: var(--bad); } .da-nums .none { color: var(--muted); }
