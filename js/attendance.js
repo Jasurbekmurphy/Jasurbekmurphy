@@ -24,10 +24,16 @@ async function stuHash(row) {
 
 async function botApi(path, opts = {}) {
   const url = state.bot.url.replace(/\/+$/, '') + path;
-  const res = await fetch(url, {
-    ...opts,
-    headers: { Authorization: 'Bearer ' + state.bot.key, 'Content-Type': 'application/json', ...(opts.headers || {}) },
-  });
+  if (!/^https:\/\//i.test(url) && location.protocol === 'https:') throw new Error("Bot manzili https:// bilan boshlanishi kerak");
+  let res;
+  try {
+    res = await fetch(url, {
+      ...opts,
+      headers: { Authorization: 'Bearer ' + state.bot.key, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    });
+  } catch (e) {
+    throw new Error("Serverga ulanib bo'lmadi. Manzilni brauzerda ochib ko'ring — \"Jadval Baza davomat boti ishlayapti ✅\" chiqishi kerak. Chiqmasa: HTTPS (Caddy) yoki 443-port ishlamayapti.");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ('Bot xatosi: ' + res.status));
   return data;
@@ -372,8 +378,8 @@ function botHtml() {
     <div class="att-grid">
       <div class="box">
         <h3>Botni ulash</h3>
-        <label>Bot manzili (Cloudflare Worker)
-          <input id="b-url" value="${esc(state.bot.url)}" placeholder="https://jadval-bot.sizning-nom.workers.dev">
+        <label>Bot manzili (server yoki Cloudflare)
+          <input id="b-url" value="${esc(state.bot.url)}" placeholder="https://1-2-3-4.sslip.io">
         </label>
         <label style="margin-top:10px">Admin kalit (ADMIN_KEY)
           <div class="key-row"><input id="b-key" type="password" value="${esc(state.bot.key)}" autocomplete="off"><button type="button" id="b-gen" title="Yangi kalit yaratish">🎲</button><button type="button" id="b-show">👁</button></div>
@@ -381,7 +387,7 @@ function botHtml() {
         <div class="row-btns"><button class="primary" id="b-save">Saqlash va tekshirish</button></div>
         <div class="b-status">${!botReady() ? '<p class="muted small">Bot hali ulanmagan.</p>'
           : !st ? '<p class="muted small">Tekshirilmoqda…</p>'
-          : st.error ? `<p class="bad small">⚠ ${esc(st.error)}</p>`
+          : st.error ? `<p class="bad small">⚠ ${esc(st.error)}</p><p class="small"><a href="${esc(state.bot.url)}/" target="_blank" rel="noopener">🔗 ${esc(state.bot.url)}/ — brauzerda ochib tekshirish</a></p>`
           : `<p class="ok"><b>✅ Ulangan: @${esc(st.bot || '?')}</b></p>
              <p class="small">Botga ulangan mas'ullar: <b>${(st.binds || []).length}</b> / ${state.resp.people.length} · botdagi korxonalar: ${st.companies}</p>
              <p class="small"><a href="https://t.me/${esc(st.bot || '')}" target="_blank" rel="noopener">t.me/${esc(st.bot || '')}</a> — shu havolani mas'ullarga yuboring.</p>`}</div>
