@@ -1,0 +1,7 @@
+# /etc/caddy/Caddyfile
+# Domeningiz bo'lsa: bot.sizning-domen.uz
+# Domen bo'lmasa: serveringiz IP manzilidagi nuqtalarni chiziqchaga almashtiring,
+#   masalan 185.22.33.44 -> 185-22-33-44.sslip.io
+185-22-33-44.sslip.io {
+	reverse_proxy 127.0.0.1:8787
+}

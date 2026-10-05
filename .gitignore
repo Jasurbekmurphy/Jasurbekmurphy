@@ -4,3 +4,8 @@
 *.xlsm
 *.csv
 node_modules/
+
+# Bot sozlamalari va bazasi
+bot/.env
+bot/*.db
+bot/*.db-*

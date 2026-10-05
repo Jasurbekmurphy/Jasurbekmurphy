@@ -1,4 +1,5 @@
-// Jadval Baza — davomat boti (Cloudflare Worker + D1).
+// Jadval Baza — davomat boti.
+// Ikki xil ishlaydi: Cloudflare Worker + D1 yoki o'z serveringizda (server.js orqali, SQLite).
 //
 // Kerakli sozlamalar (Cloudflare → Worker → Settings):
 //   BOT_TOKEN  — BotFather bergan token (Secret)
@@ -44,7 +45,7 @@ async function sha(text) {
 const webhookSecret = async (env) => (await sha(env.ADMIN_KEY + ':tg')).slice(0, 32);
 
 async function tg(env, method, payload) {
-  const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+  const res = await fetch(`${env.TG_API || 'https://api.telegram.org'}/bot${env.BOT_TOKEN}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

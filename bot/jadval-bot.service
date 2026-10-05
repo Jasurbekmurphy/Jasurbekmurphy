@@ -1,0 +1,16 @@
+# /etc/systemd/system/jadval-bot.service
+[Unit]
+Description=Jadval Baza davomat boti
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/jadval-bot
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+User=jadvalbot
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

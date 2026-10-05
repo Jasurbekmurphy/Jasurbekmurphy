@@ -388,7 +388,9 @@ function botHtml() {
         <p class="fl-note">Manzil va kalit bulut orqali boshqa qurilmalaringizga ham (shifrlangan holda) o'tadi.</p>
       </div>
       <div class="box">
-        <h3>Bir martalik o'rnatish (≈15 daqiqa)</h3>
+        <h3>O'rnatish</h3>
+        <p class="small"><b>O'z serveringiz bo'lsa:</b> <a href="https://github.com/Jasurbekmurphy/Jasurbekmurphy/blob/claude/salom-qudvc3/bot/SERVER.md" target="_blank" rel="noopener">📖 serverga o'rnatish yo'riqnomasi</a> (Node.js + Caddy). Bot manzili: <code>https://&lt;server manzili&gt;</code>.</p>
+        <p class="small muted">Server bo'lmasa — bepul Cloudflare orqali:</p>
         <ol class="guide">
           <li><b>Bot yarating:</b> Telegram'da <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code> → nom bering → <b>token</b>ni nusxalang.</li>
           <li><b>Kalit:</b> chapdagi 🎲 tugmasini bosing — admin kalit yaratiladi, uni ham nusxalang.</li>

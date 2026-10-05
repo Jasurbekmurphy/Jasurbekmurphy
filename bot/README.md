@@ -1,5 +1,7 @@
 # Davomat boti — o'rnatish yo'riqnomasi
 
+> **O'z serveringiz bormi?** Unda [SERVER.md](SERVER.md) ga qarang — Cloudflare kerak emas.
+
 Mas'ul shaxslar Telegram bot orqali korxonadagi o'quvchilar davomatini belgilaydi.
 Natija saytdagi **"Mas'ul va davomat"** bo'limida jonli ko'rinadi.
 
