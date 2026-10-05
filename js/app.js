@@ -214,6 +214,8 @@ const state = {
   view: null,      // baza + qo'shimcha (virtual) ustunlar: shartnoma belgilari
   script: 'orig',  // ko'rinish: 'orig' | 'lat' | 'cyr'
   marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
+  resp: { people: [], assign: {} }, // mas'ul shaxslar va ularga biriktirilgan korxonalar
+  bot: { url: '', key: '' },          // davomat boti (Cloudflare Worker) manzili va kaliti
   compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list' },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined },
 };
@@ -714,11 +716,15 @@ async function saveLocal() {
     await Store.del('db');
     await Store.del('templates');
     await Store.del('marks');
+    await Store.del('resp');
+    await Store.del('botcfg');
     return;
   }
   if (state.db) await Store.set('db', state.db); else await Store.del('db');
   await Store.set('templates', state.templates);
   await Store.set('marks', state.marks);
+  await Store.set('resp', state.resp);
+  await Store.set('botcfg', state.bot);
 }
 
 function onDbChanged() {
@@ -728,6 +734,7 @@ function onDbChanged() {
   renderDbStatus();
   renderCompanies();
   renderEdit();
+  renderAttendance();
   if (state.db && !state.table) state.table = defaultTable();
   renderTable();
   if (state.tpl && state.db) renderTemplate();
@@ -1205,7 +1212,7 @@ function renderCompanies() {
 
 // ---------------------------------------------------------------- BULUT (kod bilan)
 function cloudPayload() {
-  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, marks: state.marks, db: { ...state.db, file: Sync.toB64(state.db.file) } };
+  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, marks: state.marks, resp: state.resp, bot: state.bot, db: { ...state.db, file: Sync.toB64(state.db.file) } };
 }
 
 async function applyPayload(p) {
@@ -1213,6 +1220,8 @@ async function applyPayload(p) {
   state.db = { ...p.db, file: file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) };
   state.templates = p.templates || [];
   state.marks = p.marks || { comp: {}, stu: {} };
+  state.resp = p.resp || state.resp;
+  state.bot = p.bot || state.bot;
   state.cloud.token = p.token || state.cloud.token;
   state.table = null;
   await saveLocal();
@@ -1351,7 +1360,7 @@ function renderCloud() {
       if (!confirm('Bu qurilmadan baza va kod o\'chirilsinmi? (Bulutdagi baza saqlanib qoladi)')) return;
       state.cloud = { session: null, token: '', sha: null, remember: true, dirty: false, remote: true };
       state.db = null; state.templates = []; state.table = null; state.marks = { comp: {}, stu: {} };
-      await Store.del('cloud'); await Store.del('db'); await Store.del('templates'); await Store.del('marks');
+      await Store.del('cloud'); await Store.del('db'); await Store.del('templates'); await Store.del('marks'); await Store.del('resp'); await Store.del('botcfg');
       onDbChanged();
     };
     return;
@@ -1475,6 +1484,8 @@ async function init() {
     state.db = (await Store.get('db')) || null;
     state.templates = (await Store.get('templates')) || [];
     state.marks = (await Store.get('marks')) || { comp: {}, stu: {} };
+    state.resp = (await Store.get('resp')) || state.resp;
+    state.bot = (await Store.get('botcfg')) || state.bot;
     const saved = await Store.get('cloud');
     if (saved && saved.key) {
       Object.assign(state.cloud, { session: { key: saved.key, salt: saved.salt, iter: saved.iter }, token: saved.token, sha: saved.sha, dirty: !!saved.dirty, at: saved.at, remember: true });

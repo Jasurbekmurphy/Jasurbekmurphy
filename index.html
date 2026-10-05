@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
   <div class="app">
@@ -25,9 +25,10 @@
         <button class="tab" data-tab="p-dash" data-title="Dashboard" data-sub="Umumiy ko'rinish: barcha ko'rsatkichlar bir joyda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9zM14 20h6V11h-6v9zM4 20h6v-4H4v4zM14 4v4h6V4h-6z"/></svg><span class="t-long">Dashboard</span><span class="t-short">Asosiy</span></button>
         <button class="tab" data-tab="p-db" data-title="Baza" data-sub="Asosiy jadvalni yuklash, fayl qo'shish va bulut"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.4 0 8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3V6c0-1.7 3.6-3 8-3zM4 6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span class="t-long">Baza</span><span class="t-short">Baza</span></button>
         <button class="tab" data-tab="p-edit" data-title="Tahrirlash" data-sub="Ma'lumotlarni to'g'ridan-to'g'ri jadvalda tuzating"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg><span class="t-long">Tahrirlash</span><span class="t-short">Tahrir</span></button>
-        <button class="tab" data-tab="p-fill" data-title="Shablonni to'ldirish" data-sub="Topshiriq bilan kelgan jadvalni bazadan avtomatik to'ldirish"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3zM14 3v4h4M9 13l2 2 4-4"/></svg><span class="t-long">Shablonni to'ldirish</span><span class="t-short">To'ldirish</span></button>
+        <button class="tab" data-tab="p-fill" data-title="Shablonni to'ldirish" data-sub="Topshiriq bilan kelgan jadvalni bazadan avtomatik to'ldirish"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3zM14 3v4h4M9 13l2 2 4-4"/></svg><span class="t-long">Shablonni to'ldirish</span><span class="t-short">To'ldir</span></button>
         <button class="tab" data-tab="p-table" data-title="Jadval yaratish" data-sub="Filtr va ustunlar bilan o'z jadvalingizni tuzing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg><span class="t-long">Jadval yaratish</span><span class="t-short">Jadval</span></button>
         <button class="tab" data-tab="p-comp" data-title="Korxonalar" data-sub="Korxonalar, guruhlar va shartnomalar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V7l6-3v17M10 21V9l10 3v9M3 21h18M14 15h2M14 18h2"/></svg><span class="t-long">Korxonalar</span><span class="t-short">Korxona</span></button>
+        <button class="tab" data-tab="p-att" data-title="Mas'ul va davomat" data-sub="Mas'ullar Telegram bot orqali o'quvchilar davomatini belgilaydi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9V4zM7 5H5v16h14V5h-2M8.5 13.5l2.5 2.5 5-5"/></svg><span class="t-long">Mas'ul va davomat</span><span class="t-short">Davomat</span></button>
       </nav>
       <div class="side-foot">
         <span class="side-cap">Yozuv</span>
@@ -113,22 +114,26 @@
             <div id="comp-body"></div>
           </div>
         </section>
+        <section class="panel" id="p-att" hidden>
+          <div id="att-body"></div>
+        </section>
       </main>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
 
-  <script src="vendor/xlsx.full.min.js?v=11"></script>
-  <script src="vendor/jszip.min.js?v=11"></script>
-  <script src="js/match.js?v=11"></script>
-  <script src="js/xlsxfill.js?v=11"></script>
-  <script src="js/xlsxwrite.js?v=11"></script>
-  <script src="js/filters.js?v=11"></script>
-  <script src="js/sync.js?v=11"></script>
-  <script src="js/translit.js?v=11"></script>
-  <script src="js/edit.js?v=11"></script>
-  <script src="js/dashboard.js?v=11"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="vendor/xlsx.full.min.js?v=13"></script>
+  <script src="vendor/jszip.min.js?v=13"></script>
+  <script src="js/match.js?v=13"></script>
+  <script src="js/xlsxfill.js?v=13"></script>
+  <script src="js/xlsxwrite.js?v=13"></script>
+  <script src="js/filters.js?v=13"></script>
+  <script src="js/sync.js?v=13"></script>
+  <script src="js/translit.js?v=13"></script>
+  <script src="js/edit.js?v=13"></script>
+  <script src="js/attendance.js?v=13"></script>
+  <script src="js/dashboard.js?v=13"></script>
+  <script src="js/app.js?v=13"></script>
 </body>
 </html>

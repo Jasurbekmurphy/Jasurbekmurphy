@@ -31,6 +31,13 @@ bo'lmasa ham ishlaydi.
    - tez qidirish va qatorni bosib odamning barcha ma'lumotini ko'rish.
 4. **☁️ Bulutli baza (kod bilan)** — bazani boshqa kompyuter va telefonda ochish.
 
+## Mas'ul va davomat (Telegram bot)
+
+Har bir korxonaga mas'ul shaxs biriktiriladi. Mas'ul Telegram botda **📋 Davomat** →
+korxona → o'quvchilarni ✅ keldi / ❌ kelmadi qilib belgilaydi. Natija saytda jonli
+ko'rinadi, davomat yubormagan mas'ulning korxonasi "Bormadi" deb chiqadi.
+Bot Cloudflare Workers'da bepul ishlaydi — o'rnatish: [`bot/README.md`](bot/README.md).
+
 ## Xavfsizlik
 
 - Ma'lumotlar (pasport, JShShIR, telefon) qurilmaning brauzerida (IndexedDB) saqlanadi.
