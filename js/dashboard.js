@@ -111,10 +111,12 @@ function renderDashboard() {
   const comp = companyGroups();
   const cfi = dbFieldIdx('korxonanomi', 'korxona');
   const compKeys = new Set(cfi >= 0 ? raw.map((r) => r[cfi]).filter((v) => v != null && String(v).trim()).map(companyKey) : []);
-  const compList = comp ? comp.list.filter((c) => compKeys.has(c.key)) : [];
+  const compList = comp ? comp.list.filter((c) => compKeys.has(c.key) && !c.inst) : [];
   const compN = compList.length;
   const compWith = compList.filter((c) => c.contract).length;
   const stuWith = raw.filter((r) => studentContract(r).on).length;
+  const instN = raw.filter((r) => studentContract(r).na).length;
+  const need = total - instN;
   const iss = jshshirIssues(state.db);
   const problems = iss.bad.length + iss.dups.length;
   const groupsN = gi >= 0 ? new Set(rows.map((r) => r[gi]).filter((v) => v != null)).size : 0;
@@ -124,7 +126,8 @@ function renderDashboard() {
     working != null && kpi({ id: 'work', label: 'Ishlaydiganlar (oylik oladi)', icon: '💼', value: working, of: total, pct: pct(working), sub: `${Math.round(pct(working))}% · bosib ro'yxatni oching` }),
     stays != null && kpi({ id: 'stay', label: 'Korxonada ishda qoladi', icon: '🏭', value: stays, of: total, pct: pct(stays), sub: `${Math.round(pct(stays))}%` }),
     comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `korxona shartnomasi bor: ${compWith} ta`, pct: compN ? (compWith / compN) * 100 : 0 }),
-    kpi({ id: 'stuc', label: "O'quvchi shartnomasi", icon: '📄', value: stuWith, of: total, pct: pct(stuWith), sub: `${total - stuWith} ta o'quvchida yo'q`, status: stuWith === total ? 'ok' : 'warn' }),
+    kpi({ id: 'stuc', label: "O'quvchi shartnomasi", icon: '📄', value: stuWith, of: need, pct: need ? (stuWith / need) * 100 : 0,
+      sub: `${need - stuWith} ta o'quvchida yo'q` + (instN ? ` · 🎓 ${instN} ta ta'lim muassasasida` : ''), status: stuWith === need ? 'ok' : 'warn' }),
     kpi({ id: 'issues', label: "Ma'lumotdagi xatolar", icon: problems ? '⚠️' : '✓', value: problems, status: problems ? 'bad' : 'ok',
       sub: problems ? `JShShIR xato: ${iss.bad.length} · dublikat: ${iss.dups.length}` : 'JShShIR hammasi to\'g\'ri' }),
   ].filter(Boolean);

@@ -934,11 +934,25 @@ function companyContract(name) {
   return !!(m && m.c);
 }
 
+// "Ta'lim muassasasida" (3-toifa) o'quvchilar o'qishda bo'ladi — shartnoma talab qilinmaydi
+const INST_LABEL = "Ta'lim muassasasida";
+function isInstitutionName(name) {
+  const c = Match.canon(name);
+  return c.includes('talimmuassasa') || c.includes('oquvmuassasa') || c.includes('talimmassasa');
+}
+function inInstitution(row) {
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
+  if (cfi >= 0 && row[cfi] != null && isInstitutionName(row[cfi])) return true;
+  const ti = dbFieldIdx('toifasi');
+  return ti >= 0 && row[ti] != null && /^\s*3\s*[-–]?\s*(тоифа|toifa)/i.test(String(row[ti]));
+}
+
+// O'quvchi shartnomasi: odatiy holatda "yo'q", foydalanuvchi o'zi "bor" qilib belgilaydi
 function studentContract(row) {
+  if (inInstitution(row)) return { on: false, na: true, src: 'inst' };
   const k = studentKey(row);
   if (k in state.marks.stu) return { on: !!state.marks.stu[k], src: 'mark' };
-  const xi = dbFieldIdx('ikkitamonlama', 'shartnoma');
-  return { on: xi >= 0 && row[xi] != null && String(row[xi]).trim() !== '', src: 'excel' };
+  return { on: false, src: 'default' };
 }
 
 function computeView() {
@@ -950,8 +964,8 @@ function computeView() {
     { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true },
   ]);
   const rows = db.rows.map((r) => r.concat([
-    ci >= 0 && r[ci] != null ? (companyContract(r[ci]) ? '+' : '−') : null,
-    studentContract(r).on ? '+' : '−',
+    ci >= 0 && r[ci] != null ? (isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
+    (() => { const sc = studentContract(r); return sc.na ? INST_LABEL : sc.on ? '+' : '−'; })(),
   ]));
   // Kirill/lotin: korxona nomi ustunidan boshqa hamma matn o'giriladi
   const sc = state.script;
@@ -1006,7 +1020,9 @@ function companyGroups() {
     const groups = new Map();
     for (const r of c.rows) { const gname = gi >= 0 ? String(r[gi] ?? '—') : '—'; groups.set(gname, (groups.get(gname) || 0) + 1); }
     const withContract = c.rows.filter((r) => studentContract(r).on).length;
-    return { ...c, name, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: companyContract(name), withContract };
+    const need = c.rows.filter((r) => !studentContract(r).na).length;
+    const inst = isInstitutionName(name);
+    return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && companyContract(name), withContract };
   });
   list.sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
   return { list, gi };
@@ -1030,17 +1046,19 @@ function renderCompanies() {
   if (ui.group) {
     all = all.map((c) => {
       const rows = c.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
-      return { ...c, rows, withContract: rows.filter((r) => studentContract(r).on).length, groups: [[ui.group, rows.length]] };
+      return { ...c, rows, withContract: rows.filter((r) => studentContract(r).on).length, need: rows.filter((r) => !studentContract(r).na).length, groups: [[ui.group, rows.length]] };
     }).filter((c) => c.rows.length);
   }
   let list = all;
   const q = Match.norm(ui.q);
   if (q) list = list.filter((c) => Match.norm(c.name).includes(q) || c.rows.some((r) => Match.norm(r[nameIdx]).includes(q)));
   if (ui.show === 'yes') list = list.filter((c) => c.contract);
-  if (ui.show === 'no') list = list.filter((c) => !c.contract);
-  const students = all.reduce((n, c) => n + c.rows.length, 0);
+  if (ui.show === 'no') list = list.filter((c) => !c.contract && !c.inst);
+  const students = all.reduce((n, c) => n + c.need, 0);
   const stuWith = all.reduce((n, c) => n + c.withContract, 0);
   const compWith = all.filter((c) => c.contract).length;
+  const instN = all.filter((c) => c.inst).reduce((n, c) => n + c.rows.length, 0) + all.filter((c) => !c.inst).reduce((n, c) => n + c.rows.length - c.need, 0);
+  const realComps = all.filter((c) => !c.inst).length;
 
   // Guruh tanlanganda: o'quvchilar ro'yxati (+/− belgilash uchun eng qulay ko'rinish)
   const groupList = () => {
@@ -1063,9 +1081,9 @@ function renderCompanies() {
           return `<tr>
             <td>${i + 1}</td>
             <td class="wrap"><b>${esc(r[nameIdx])}</b></td>
-            <td><button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button></td>
+            <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
             <td class="wrap">${comp ? esc(comp) : '<span class="muted">—</span>'}</td>
-            <td>${comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${comp && isInstitutionName(comp) ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : comp ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
           </tr>`;
         }).join('') || '<tr><td colspan="5" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
       </table></div>`;
@@ -1082,26 +1100,27 @@ function renderCompanies() {
       <button data-view="comp" class="${ui.view === 'comp' ? 'on' : ''}">🏢 Korxonalar bo'yicha</button>
     </div>` : ''}
     <div class="stats">
-      <div><b>${all.length}</b><span>korxona</span></div>
+      <div><b>${realComps}</b><span>korxona</span></div>
       <div class="ok"><b>${compWith}</b><span>korxona shartnomasi bor</span></div>
       <div class="${stuWith < students ? 'warn' : 'ok'}"><b>${stuWith}/${students}</b><span>o'quvchi shartnomasi</span></div>
+      ${instN ? `<div><b>${instN}</b><span>🎓 ta'lim muassasasida</span></div>` : ''}
     </div>
     <input type="search" id="comp-q" placeholder="Korxona yoki o'quvchi nomi…" value="${esc(ui.q)}">
     <div class="seg wide" id="comp-show">
       <button data-show="all" class="${ui.show === 'all' ? 'on' : ''}">Hammasi (${all.length})</button>
       <button data-show="yes" class="${ui.show === 'yes' ? 'on' : ''}">Shartnoma bor (${compWith})</button>
-      <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Shartnoma yo'q (${all.length - compWith})</button>
+      <button data-show="no" class="${ui.show === 'no' ? 'on' : ''}">Shartnoma yo'q (${realComps - compWith})</button>
     </div>
     ${ui.group && ui.view === 'list' ? groupList() : `<div class="comp-list">${list.map((c) => `
-      <details class="comp ${c.contract ? 'has' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
+      <details class="comp ${c.contract ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
         <summary>
           <div class="comp-top">
             <div class="comp-name">${esc(c.name)}</div>
-            <button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan shartnoma">${c.contract ? '＋ Shartnoma bor' : "− Shartnoma yo'q"}</button>
+            ${c.inst ? '<span class="inst-badge">🎓 Ta\'lim muassasasi · shartnoma shart emas</span>' : `<button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan shartnoma">${c.contract ? '＋ Shartnoma bor' : "− Shartnoma yo'q"}</button>`}
           </div>
           <div class="comp-sub">
             <span>👥 ${c.rows.length} o'quvchi</span>
-            <span class="${c.withContract === c.rows.length ? 'ok' : 'warn'}">📄 o'quvchi shartnomasi ${c.withContract}/${c.rows.length}</span>
+            ${c.need ? `<span class="${c.withContract === c.need ? 'ok' : 'warn'}">📄 o'quvchi shartnomasi ${c.withContract}/${c.need}</span>` : '<span>🎓 o\'qishda — shartnoma talab qilinmaydi</span>'}
           </div>
           <div class="gchips">${c.groups.map(([gname, n]) => `<span class="gchip">${esc(gname)}-guruh <b>${n}</b></span>`).join('')}</div>
         </summary>
@@ -1112,7 +1131,7 @@ function renderCompanies() {
             <thead><tr><th>№</th><th>F.I.Sh</th><th>Shartnoma</th><th>Guruh</th><th>Telefon</th></tr></thead>
             <tbody>${c.rows.map((r, i) => { const sc = studentContract(r); return `<tr>
               <td>${i + 1}</td><td class="wrap">${esc(r[nameIdx])}</td>
-              <td><button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}" title="${sc.src === 'excel' ? 'Excel jadvalidagi shartnoma ustunidan' : 'Qo\'lda belgilangan'}">${sc.on ? '＋ bor' : "− yo'q"}</button></td>
+              <td>${sc.na ? '<span class="inst-badge">🎓 O\'qishda</span>' : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
               <td>${esc(data.gi >= 0 ? r[data.gi] ?? '' : '')}</td><td>${esc(ti >= 0 ? r[ti] ?? '' : '')}</td>
             </tr>`; }).join('')}</tbody>
           </table></div>
@@ -1152,24 +1171,24 @@ function renderCompanies() {
   if (selG && ui.group) { const bar = selG.parentElement; bar.scrollLeft = selG.offsetLeft - bar.clientWidth / 2 + selG.clientWidth / 2; }
   box.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => { ui.view = b.dataset.view; renderCompanies(); }));
   box.querySelectorAll('[data-allgroup]').forEach((b) => (b.onclick = () => {
-    const rows = db.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
+    const rows = db.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group && !studentContract(r).na);
     if (!confirm(`${ui.group}-guruhning ${rows.length} ta o'quvchisiga "${b.dataset.allgroup === '1' ? '＋' : '−'}" qo'yilsinmi?`)) return;
     for (const r of rows) state.marks.stu[studentKey(r)] = b.dataset.allgroup === '1';
     marksChanged();
   }));
   box.querySelectorAll('[data-allstu]').forEach((b) => (b.onclick = () => {
-    for (const r of byKey(b.dataset.allstu).rows) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
+    for (const r of byKey(b.dataset.allstu).rows) if (!studentContract(r).na) state.marks.stu[studentKey(r)] = b.dataset.v === '1';
     marksChanged();
   }));
   box.querySelectorAll('[data-xlcomp]').forEach((b) => (b.onclick = async () => {
     const c = byKey(b.dataset.xlcomp);
-    const rows = c.rows.map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, studentContract(r).on ? '+' : '−']);
+    const rows = c.rows.map((r, i) => [i + 1, r[nameIdx], data.gi >= 0 ? r[data.gi] : null, ti >= 0 ? r[ti] : null, (studentContract(r).na ? INST_LABEL : studentContract(r).on ? '+' : '−')]);
     const blob = await XlsxWrite.buildWorkbook({ title: c.name + ' — o\'quvchilar', sheetName: 'O\'quvchilar', headers: ['№', 'F.I.Sh', 'Guruh', 'Telefon', "O'quvchi shartnomasi"], rows });
     downloadBlob(blob, c.name.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60) + '.xlsx');
   }));
   $('#comp-xl').onclick = async () => {
     const rows = list.map((c, i) => [i + 1, c.name, c.rows.length, c.groups.map(([gname, n]) => `${gname} (${n})`).join(', '),
-      c.contract ? '+' : '−', `${c.withContract}/${c.rows.length}`, [...c.people.keys()].join('; ')]);
+      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, [...c.people.keys()].join('; ')]);
     const blob = await XlsxWrite.buildWorkbook({ title: 'Korxonalar ro\'yxati', sheetName: 'Korxonalar',
       headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Korxona shartnomasi', "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
     downloadBlob(blob, 'Korxonalar.xlsx');

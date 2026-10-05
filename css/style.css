@@ -487,3 +487,6 @@ table.stu td.wrap { white-space: normal; min-width: 150px; }
 @media (max-width: 700px) { .grp-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .gbtn { flex: none; } }
 table.glist td { padding: 8px 10px; }
 table.glist td.wrap { white-space: normal; }
+.inst-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e8eefc; color: #2d4fa3; white-space: nowrap; }
+.comp.inst { border-left-color: #4a6fd1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .inst-badge { background: #1b2847; color: #a9bff5; } }
