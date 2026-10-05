@@ -1060,8 +1060,16 @@ async function init() {
   onDbChanged();
   showTab(state.db ? tab : 'p-db');
 
+  const hadController = 'serviceWorker' in navigator && !!navigator.serviceWorker.controller;
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => reg.update()).catch(() => {});
+    // Yangi versiya o'rnatilganda sahifani bir marta avtomatik yangilash
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded || !hadController) return;
+      reloaded = true;
+      location.reload();
+    });
   }
 
   // Bulut: ulangan bo'lsa — yangilanishni tekshirish; bo'lmasa — bulutda baza bormi

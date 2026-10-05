@@ -1,11 +1,12 @@
 // Oflayn ishlash uchun: ilova fayllari keshda saqlanadi.
-const CACHE = 'jadval-baza-v2';
+const CACHE = 'jadval-baza-v3';
 const FILES = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'js/match.js', 'js/xlsxfill.js', 'js/xlsxwrite.js', 'js/filters.js', 'js/sync.js',
   'vendor/xlsx.full.min.js', 'vendor/jszip.min.js', 'manifest.webmanifest', 'icon.svg',
 ];
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' }))))
+    .catch(() => {}).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
@@ -15,7 +16,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request).then((res) => {
+    // cache: 'no-cache' — brauzerning HTTP keshidan eski faylni olmaslik uchun har safar tekshiriladi
+    fetch(e.request, { cache: 'no-cache' }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return res;
