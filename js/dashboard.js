@@ -1,4 +1,4 @@
-/* global dueOn, attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global dueOn, ownerOn, weekdayOf, attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -265,7 +265,7 @@ function dashAttModel() {
   for (const c of list) {
     const rows = c.rows.filter((r) => inCourse(r) && dueOn(r, gi, day)); // 3+3: bugun korxonada bo'ladiganlar
     if (!rows.length) continue;
-    const pid = state.resp.assign[c.key];
+    const pid = ownerOn(c.key, weekdayOf(day));
     if (!people.has(pid)) { tot.free++; tot.freeStu += rows.length; continue; }
     const it = items.get(c.key);
     if (!per.has(pid)) per.set(pid, { p: people.get(pid), comp: 0, went: 0, yes: 0, no: 0, none: 0, last: 0 });

@@ -506,7 +506,7 @@ html, body { overflow-x: clip; }
 .att-tabs button { min-height: 40px; font-size: 14px; }
 .att-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
 .att-grid .box { margin: 0; }
-@media (max-width: 1000px) { .att-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .att-grid { grid-template-columns: minmax(0, 1fr); } }
 .p-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .p-form input:first-child { grid-column: 1 / -1; }
 .p-form button { grid-column: 1 / -1; }
@@ -524,11 +524,11 @@ html, body { overflow-x: clip; }
 .a-bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: var(--surface-2); border-radius: 10px; margin-bottom: 10px; }
 .a-bulk select { width: auto; flex: 1 1 160px; }
 .a-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; }
-.a-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 10px; }
+.a-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 270px); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 10px; }
 .a-row.on { border-left-color: var(--ok); }
 .a-name { display: flex; flex-direction: column; min-width: 0; }
 .a-name b { word-break: break-word; font-size: 14px; }
-@media (max-width: 560px) { .a-row { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .a-row { grid-template-columns: minmax(0, 1fr); } }
 .key-row { display: flex; gap: 6px; margin-top: 4px; }
 .key-row input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
 .key-row button { flex: none; min-height: 42px; padding: 4px 12px; }
@@ -618,3 +618,16 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .sched-row.a { border-left-color: var(--ok); } .sched-row.b { border-left-color: var(--warn); }
 .sched-name { display: flex; flex-direction: column; min-width: 0; }
 .sched-seg button { padding: 2px 10px; font-size: 12px; }
+
+/* Kunlar bo'yicha mas'ul */
+.a-sel { display: flex; gap: 6px; align-items: center; }
+.a-split-btn { min-height: 34px; padding: 2px 8px; font-size: 13px; white-space: nowrap; }
+.a-split-btn.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.a-split-btn.hint { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn-soft); }
+.a-halves { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 6px 10px; width: 100%; padding-top: 6px; border-top: 1px dashed var(--border); }
+.a-halves label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.a-auto { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0 10px; }
+.as-list { max-height: 50vh; overflow: auto; padding-left: 18px; } .as-list li { margin-bottom: 6px; }
+.a-sel select { flex: 1; min-width: 0; }
+.a-halves select { width: 100%; min-width: 0; }
+.a-bulk select, .a-bar select, .a-bar input { max-width: 100%; min-width: 0; }

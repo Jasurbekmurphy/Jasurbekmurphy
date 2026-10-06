@@ -1368,7 +1368,7 @@ function syncBase(p) {
   return JSON.parse(JSON.stringify({
     db: dbSig(p.db), tpl: byKey(p.templates, 'name'),
     comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {},
-    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, bot: p.bot || null,
+    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, bot: p.bot || null,
   }));
 }
 
@@ -1393,11 +1393,16 @@ function mergePayload(base, L, R, prefer) {
   const people = mergeMap(b.people, l.people, r.people, prefer);
   const assign = mergeMap(b.assign, l.assign, r.assign, prefer);
   for (const k of Object.keys(assign)) if (!people[assign[k]]) delete assign[k];
+  const assignBy = mergeMap(b.assignBy, l.assignBy, r.assignBy, prefer);
+  for (const k of Object.keys(assignBy)) {
+    const v = Object.fromEntries(Object.entries(assignBy[k] || {}).filter(([, id]) => people[id]));
+    if (Object.keys(v).length) assignBy[k] = v; else delete assignBy[k];
+  }
   return {
     ...R, v: 1, savedAt: Date.now(), token: R.token || L.token, db, bot: bot || L.bot || R.bot,
     templates: Object.values(mergeMap(b.tpl, l.tpl, r.tpl, prefer)),
     marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer) },
-    resp: { ...(R.resp || {}), people: Object.values(people), assign, sched: mergeMap(b.sched, l.sched, r.sched, prefer) },
+    resp: { ...(R.resp || {}), people: Object.values(people), assign, assignBy, sched: mergeMap(b.sched, l.sched, r.sched, prefer) },
   };
 }
 

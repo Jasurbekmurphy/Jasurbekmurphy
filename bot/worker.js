@@ -34,6 +34,8 @@ const weekday = () => nowTk().getUTCDay(); // 0 = yakshanba
 const WD = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
 // Bugun korxonada bo'lishi kerak bo'lgan o'quvchilar (indekslari)
 const dueIdx = (c) => c.s.map((s, i) => i).filter((i) => !c.s[i][3] || String(c.s[i][3]).includes(String(weekday())));
+// Korxonaning bugungi mas'uli: Du–Chor va Pay–Shan uchun har xil bo'lishi mumkin (pd)
+const ownerNow = (c) => { const w = weekday(), h = w >= 1 && w <= 3 ? '123' : w >= 4 ? '456' : ''; return (c.pd && h && c.pd[h]) || c.p; };
 const hhmm = (ms) => new Date(ms + 5 * 3600 * 1000).toISOString().slice(11, 16);
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const digits = (s) => String(s ?? '').replace(/\D+/g, '');
@@ -133,14 +135,20 @@ async function myCompanies(env, uid) {
   const bound = await getBind(env, uid);
   const roster = await getRoster(env);
   if (!bound) return { roster, list: null };
-  const list = roster.companies.map((c, ci) => ({ ...c, ci })).filter((c) => c.p === bound.pid);
-  return { roster, list, pid: bound.pid };
+  const all = roster.companies.map((c, ci) => ({ ...c, ci }));
+  const list = all.filter((c) => ownerNow(c) === bound.pid);
+  // boshqa kunlari shu mas'ulga tegishli korxonalar
+  const later = all.filter((c) => ownerNow(c) !== bound.pid && [c.p, ...Object.values(c.pd || {})].includes(bound.pid));
+  return { roster, list, later, pid: bound.pid };
 }
 
 async function companiesView(env, uid) {
-  const { roster, list } = await myCompanies(env, uid);
+  const { roster, list, later, pid } = await myCompanies(env, uid);
   if (!list) return { text: "Siz hali ulanmagansiz. /start buyrug'ini yuboring." };
-  if (!list.length) return { text: "Sizga hozircha korxona biriktirilmagan. Admin bilan bog'laning." };
+  const days = (c) => [['123', 'Du–Chor'], ['456', 'Pay–Shan']].filter(([h]) => ((c.pd && c.pd[h]) || c.p) === c.me).map(([, l]) => l).join(', ');
+  const laterTxt = later.length ? `\n\n🗓 Boshqa kunlardagi korxonalaringiz:\n${later.map((c) => `• ${esc(c.n)} — ${days({ ...c, me: pid })}`).join('\n')}` : '';
+  if (!list.length && !later.length) return { text: "Sizga hozircha korxona biriktirilmagan. Admin bilan bog'laning." };
+  if (!list.length) return { text: `📅 ${today()} · ${WD[weekday()]}\n\n💤 Bugun sizga korxona yo'q.${laterTxt}`, parse_mode: 'HTML' };
   const done = new Set((await env.DB.prepare('SELECT ck FROM att WHERE date = ?').bind(today()).all()).results.map((r) => r.ck));
   const todayList = list.map((c) => ({ ...c, due: dueIdx(c).length })).filter((c) => c.due);
   const rest = list.length - todayList.length;
@@ -209,7 +217,7 @@ async function onCallback(env, cq) {
   }
   const ci = +parts[2];
   const c = roster.companies[ci];
-  if (!c || c.p !== pid) return answer("Bu korxona sizga biriktirilmagan", true);
+  if (!c || ownerNow(c) !== pid) return answer("Bu korxona bugun sizga biriktirilmagan", true);
   const marks = await getMarks(env, uid, c.k);
 
   if (act === 'c' || act === 'p') {

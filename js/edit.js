@@ -573,6 +573,7 @@ function migrateCompany(from, to) {
   if (a === b) return;
   if (state.marks.comp[a] && !state.marks.comp[b]) { state.marks.comp[b] = { ...state.marks.comp[a], name: to }; delete state.marks.comp[a]; }
   if (state.resp && state.resp.assign[a] && !state.resp.assign[b]) { state.resp.assign[b] = state.resp.assign[a]; delete state.resp.assign[a]; }
+  if (state.resp && state.resp.assignBy && state.resp.assignBy[a] && !state.resp.assignBy[b]) { state.resp.assignBy[b] = state.resp.assignBy[a]; delete state.resp.assignBy[a]; }
 }
 
 function applySpell(db, issues) {

@@ -4,7 +4,7 @@
 
 const attUi = {
   sub: 'att', date: '', data: null, err: '', loading: false, at: 0, timer: null, status: null,
-  q: '', open: new Set(), aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
+  q: '', open: new Set(), splitOpen: new Set(), aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
 };
 const hashCache = new Map();
 const tkToday = () => new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -49,6 +49,18 @@ const rowDays = (r, gi) => (gi >= 0 ? groupDays(r[gi]) : '');
 const weekdayOf = (date) => new Date(date + 'T00:00:00Z').getUTCDay(); // 0 = yakshanba
 const dueOn = (r, gi, date) => { const d = rowDays(r, gi); return !d || d.includes(String(weekdayOf(date))); };
 
+// ---- Kunlarga qarab mas'ul: bitta korxonaga Du–Chor bir mas'ul, Pay–Shan boshqa mas'ul borishi mumkin
+// resp.assign[ck] — asosiy mas'ul; resp.assignBy[ck] = {'123': pid, '456': pid} — kunlar bo'yicha
+const HALVES = [['123', 'Du–Chor'], ['456', 'Pay–Shan']];
+const halfOf = (wd) => (wd >= 1 && wd <= 3 ? '123' : wd >= 4 ? '456' : '');
+const splitOf = (ck) => (state.resp.assignBy || {})[ck] || null;
+function ownerOn(ck, wd) {
+  const by = splitOf(ck), h = halfOf(wd);
+  return (by && h && by[h]) || state.resp.assign[ck] || '';
+}
+// Korxonaga biriktirilgan barcha mas'ullar (asosiy + kunlar bo'yicha)
+const ownersOf = (ck) => [...new Set([state.resp.assign[ck], ...Object.values(splitOf(ck) || {})].filter(Boolean))];
+
 // Davomat uchun korxonalar: ta'lim muassasasi va shartnoma talab qilinmaydiganlar chiqariladi
 function attCompanies() {
   const data = companyGroups();
@@ -64,12 +76,15 @@ async function buildRoster() {
   const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
   const companies = [];
   for (const c of list) {
-    const pid = state.resp.assign[c.key];
-    if (!pid || !state.resp.people.some((p) => p.id === pid)) continue;
+    const valid = (id) => !!id && state.resp.people.some((p) => p.id === id);
+    const pid = valid(state.resp.assign[c.key]) ? state.resp.assign[c.key] : '';
+    const pd = {};
+    for (const [h] of HALVES) { const x = (splitOf(c.key) || {})[h]; if (valid(x)) pd[h] = x; }
+    if (!pid && !Object.keys(pd).length) continue;
     const s = [];
     for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi)]);
     s.sort((a, b) => a[2].localeCompare(b[2], 'uz', { numeric: true }) || a[1].localeCompare(b[1], 'uz'));
-    companies.push({ k: c.key, n: c.name, p: pid, s });
+    companies.push({ k: c.key, n: c.name, p: pid, ...(Object.keys(pd).length ? { pd } : {}), s });
   }
   return { people: state.resp.people.map(({ id, name, tg, phone }) => ({ id, name, tg, phone })), companies };
 }
@@ -158,11 +173,13 @@ function attModel() {
   const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
   const items = new Map(((attUi.data && attUi.data.items) || []).map((x) => [x.ck, x]));
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
-  const offToday = all.list.filter((c) => people.has(state.resp.assign[c.key])).length - list.filter((c) => people.has(state.resp.assign[c.key])).length;
-  const assigned = list.filter((c) => people.has(state.resp.assign[c.key]));
+  const wd = weekdayOf(date);
+  const own = (c) => ownerOn(c.key, wd);
+  const offToday = all.list.filter((c) => people.has(own(c))).length - list.filter((c) => people.has(own(c))).length;
+  const assigned = list.filter((c) => people.has(own(c)));
   const groups = new Map();
   for (const c of assigned) {
-    const pid = state.resp.assign[c.key];
+    const pid = own(c);
     if (!groups.has(pid)) groups.set(pid, []);
     const it = items.get(c.key);
     groups.get(pid).push({ c, it });
@@ -294,15 +311,21 @@ function peopleHtml() {
   const binds = new Set(((attUi.status && attUi.status.binds) || []).map((b) => b.pid));
   const { list, gi } = attCompanies();
   const cnt = new Map();
-  for (const c of list) { const pid = state.resp.assign[c.key]; if (pid) cnt.set(pid, (cnt.get(pid) || 0) + 1); }
+  for (const c of list) for (const pid of ownersOf(c.key)) cnt.set(pid, (cnt.get(pid) || 0) + 1);
   const groupVals = gi >= 0 ? [...new Set(list.flatMap((c) => c.rows.map((r) => String(r[gi] ?? '').trim())).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz', { numeric: true })) : [];
   const q = Match.norm(attUi.aq);
   let comps = list;
   if (q) comps = comps.filter((c) => Match.norm(c.name).includes(q));
   if (attUi.agroup) comps = comps.filter((c) => c.rows.some((r) => String(r[gi] ?? '').trim() === attUi.agroup));
-  if (attUi.afree) comps = comps.filter((c) => !state.resp.assign[c.key]);
+  if (attUi.afree) comps = comps.filter((c) => !ownersOf(c.key).length);
   const opts = (sel) => `<option value="">— biriktirilmagan —</option>${state.resp.people.map((p) => `<option value="${esc(p.id)}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}`;
-  const free = list.filter((c) => !state.resp.assign[c.key]).length;
+  const free = list.filter((c) => !ownersOf(c.key).length).length;
+  // Korxonadagi guruhlar va ularning kunlari
+  const halvesOf = (c) => {
+    const m = { '': new Set(), '123': new Set(), '456': new Set() };
+    if (gi >= 0) for (const r of c.rows) { const g = groupKey(r[gi]); if (g) m[groupDays(g)] ? m[groupDays(g)].add(g) : m[''].add(g); }
+    return m;
+  };
 
   return `
     <div class="att-grid">
@@ -339,11 +362,21 @@ function peopleHtml() {
         </div>
         ${state.resp.people.length ? `<div class="a-bulk"><span class="small">Ro'yxatdagi ${comps.length} ta korxonani</span>
           <select id="a-bulk-p">${opts('')}</select><button id="a-bulk-go">biriktirish</button></div>` : '<p class="small warn">Avval chap tomonda mas\'ul qo\'shing.</p>'}
+        ${state.resp.people.length ? `<div class="a-auto"><button id="a-auto">🤖 Ustalar bo'yicha kunlarga taqsimlash</button><span class="small muted">3+3 jadvalga qarab: har kunlari korxonaga o'sha kunlari keladigan guruhlarning ustasi biriktiriladi.</span></div>` : ''}
         <div class="a-list">${comps.map((c) => `
-          <div class="a-row ${state.resp.assign[c.key] ? 'on' : ''}">
-            <div class="a-name"><b>${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gi >= 0 ? ' · ' + [...new Set(c.rows.map((r) => r[gi]))].map(esc).join(', ') : ''}</span></div>
-            <select data-assign="${esc(c.key)}">${opts(state.resp.assign[c.key] || '')}</select>
-          </div>`).join('') || '<p class="muted small">Korxona topilmadi.</p>'}</div>
+          ${(() => {
+            const hv = halvesOf(c), by = splitOf(c.key), open = !!by || attUi.splitOpen.has(c.key);
+            const both = hv['123'].size && hv['456'].size;
+            const gtxt = [['', ''], ['123', 'Du–Chor: '], ['456', 'Pay–Shan: ']].filter(([k]) => hv[k].size).map(([k, l]) => l + [...hv[k]].join(', ')).join(' · ');
+            return `<div class="a-row ${ownersOf(c.key).length ? 'on' : ''} ${open ? 'split' : ''}">
+            <div class="a-name"><b>${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
+            <div class="a-sel">
+              <select data-assign="${esc(c.key)}" title="${open ? "Qolgan kunlar uchun asosiy mas'ul" : "Mas'ul"}">${opts(state.resp.assign[c.key] || '')}</select>
+              <button type="button" class="a-split-btn ${open ? 'on' : ''} ${both && !by ? 'hint' : ''}" data-split="${esc(c.key)}" title="Kunlar bo'yicha har xil mas'ul">📅⇄</button>
+            </div>
+            ${open ? `<div class="a-halves">${HALVES.map(([h, l]) => `<label><span>${l}</span><select data-assignh="${h}" data-ck="${esc(c.key)}"><option value="">= asosiy mas'ul</option>${state.resp.people.map((p) => `<option value="${esc(p.id)}" ${(by || {})[h] === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>`).join('')}</div>` : ''}
+          </div>`;
+          })()}`).join('') || '<p class="muted small">Korxona topilmadi.</p>'}</div>
         <div class="row-btns">
           <button class="primary" id="a-push" ${botReady() ? '' : 'disabled'}>${attUi.pushing ? 'Yuborilmoqda…' : "🔄 Ro'yxatni botga yuborish"}</button>
         </div>
@@ -370,6 +403,7 @@ function bindPeople(box) {
     if (!confirm(`"${p.name}" o'chirilsinmi? Unga biriktirilgan korxonalar bo'shaydi.`)) return;
     state.resp.people = state.resp.people.filter((x) => x.id !== p.id);
     for (const k of Object.keys(state.resp.assign)) if (state.resp.assign[k] === p.id) delete state.resp.assign[k];
+    cleanSplits();
     await respChanged();
     renderAttendance();
   }));
@@ -388,9 +422,32 @@ function bindPeople(box) {
   $('#a-free').onchange = (e) => { attUi.afree = e.target.checked; renderAttendance(); };
   box.querySelectorAll('[data-assign]').forEach((s) => (s.onchange = async () => {
     if (s.value) state.resp.assign[s.dataset.assign] = s.value; else delete state.resp.assign[s.dataset.assign];
-    s.closest('.a-row').classList.toggle('on', !!s.value);
+    s.closest('.a-row').classList.toggle('on', !!ownersOf(s.dataset.assign).length);
     await respChanged();
   }));
+  box.querySelectorAll('[data-assignh]').forEach((s) => (s.onchange = async () => {
+    const ck = s.dataset.ck;
+    state.resp.assignBy = { ...(state.resp.assignBy || {}) };
+    const by = { ...(state.resp.assignBy[ck] || {}) };
+    if (s.value) by[s.dataset.assignh] = s.value; else delete by[s.dataset.assignh];
+    if (Object.keys(by).length) state.resp.assignBy[ck] = by; else delete state.resp.assignBy[ck];
+    attUi.splitOpen.add(ck);
+    await respChanged();
+    renderAttendance();
+  }));
+  box.querySelectorAll('[data-split]').forEach((b) => (b.onclick = async () => {
+    const ck = b.dataset.split;
+    if (splitOf(ck)) {
+      if (!confirm("Kunlar bo'yicha mas'ullar olib tashlansinmi? Faqat asosiy mas'ul qoladi.")) return;
+      delete state.resp.assignBy[ck];
+      attUi.splitOpen.delete(ck);
+      await respChanged();
+    } else if (attUi.splitOpen.has(ck)) attUi.splitOpen.delete(ck);
+    else attUi.splitOpen.add(ck);
+    renderAttendance();
+  }));
+  const au = $('#a-auto');
+  if (au) au.onclick = openAutoSplit;
   const bg = $('#a-bulk-go');
   if (bg) bg.onclick = async () => {
     const pid = $('#a-bulk-p').value;
@@ -470,7 +527,11 @@ attTick();
 
 // ---------------------------------------------------------------- Mas'ullarni Excel orqali qo'shish
 function peopleCompanies(pid) {
-  return attCompanies().list.filter((c) => state.resp.assign[c.key] === pid).map((c) => c.name);
+  return attCompanies().list.filter((c) => ownersOf(c.key).includes(pid)).map((c) => {
+    const by = splitOf(c.key);
+    const hs = by ? HALVES.filter(([h]) => (by[h] || state.resp.assign[c.key]) === pid).map(([, l]) => l) : [];
+    return by && hs.length < 2 ? `${c.name} (${hs.join(', ')})` : c.name;
+  });
 }
 
 async function downloadPeopleTemplate() {
@@ -768,8 +829,8 @@ async function downloadMonth(ym, split, onlyPid) {
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
 
   const comps = list
-    .map((c) => ({ c, pid: state.resp.assign[c.key] || '' }))
-    .filter((x) => !onlyPid || x.pid === onlyPid)
+    .map((c) => ({ c, pid: state.resp.assign[c.key] || ownersOf(c.key)[0] || '' }))
+    .filter((x) => !onlyPid || ownersOf(x.c.key).includes(onlyPid))
     .sort((a, b) => (people.get(a.pid)?.name || 'я').localeCompare(people.get(b.pid)?.name || 'я', 'uz') || a.c.name.localeCompare(b.c.name, 'uz'));
   if (!comps.length) throw new Error("Tanlangan mas'ulga korxona biriktirilmagan");
 
@@ -788,7 +849,11 @@ async function downloadMonth(ym, split, onlyPid) {
         if (v === 1) { yes++; marks.push('+'); } else if (v === 0) { no++; marks.push('н'); } else marks.push('');
       }
       const kurs = ci >= 0 ? r[ci] : '';
-      return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', x.c.name], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul: people.get(x.pid)?.name || '' };
+      // O'quvchining kunlariga qarab mas'ul (Du–Chor / Pay–Shan har xil bo'lishi mumkin)
+      const dys = rowDays(r, gi);
+      const ws = dys ? [+dys[0]] : [1, 4];
+      const masul = [...new Set(ws.map((w) => people.get(ownerOn(x.c.key, w))?.name).filter(Boolean))].join(' / ');
+      return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', x.c.name], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul };
     });
   };
 
@@ -804,4 +869,97 @@ async function downloadMonth(ym, split, onlyPid) {
   const blob = await XlsxWrite.buildRegister({ sheets });
   downloadBlob(blob, `Davomat ${ym}.xlsx`);
   toast('Oylik jadval tayyor ✓', 'ok');
+}
+
+// Mavjud bo'lmagan mas'ullarga ishora qiluvchi kunlik biriktirishlarni tozalash
+function cleanSplits() {
+  const ids = new Set(state.resp.people.map((p) => p.id));
+  const by = state.resp.assignBy || {};
+  for (const ck of Object.keys(by)) {
+    for (const h of Object.keys(by[ck])) if (!ids.has(by[ck][h])) delete by[ck][h];
+    if (!Object.keys(by[ck]).length) delete by[ck];
+  }
+}
+
+// ---------------------------------------------------------------- 🤖 Ustalar bo'yicha avtomatik taqsimlash
+function autoSplitPlan(onlyBoth) {
+  const { list, gi } = attCompanies();
+  const ui = dbFieldIdx('ustasi', 'usta');
+  if (ui < 0) return { error: "Bazada usta ustuni topilmadi" };
+  const people = state.resp.people.map((p) => ({ p, t: Match.personTokens(p.name) }));
+  const cache = new Map(), unknown = new Map();
+  const personOf = (name) => {
+    const k = Match.personKey(name);
+    if (!k) return null;
+    if (cache.has(k)) return cache.get(k);
+    let best = null, bs = 0;
+    for (const x of people) { const sc = Match.personScore(Match.personTokens(name), x.t); if (sc > bs) { bs = sc; best = x.p; } }
+    const r = bs >= 0.85 ? best : null;
+    cache.set(k, r);
+    return r;
+  };
+  const changes = [];
+  for (const c of list) {
+    const pick = {};
+    for (const [h] of HALVES) {
+      const rows = c.rows.filter((r) => { const d = rowDays(r, gi); return !d || d === h; });
+      if (!rows.length) continue;
+      const cnt = new Map();
+      for (const r of rows) {
+        const u = String(r[ui] ?? '').trim();
+        if (!u) continue;
+        const p = personOf(u);
+        if (!p) { unknown.set(u, (unknown.get(u) || 0) + 1); continue; }
+        cnt.set(p.id, (cnt.get(p.id) || 0) + 1);
+      }
+      const top = [...cnt].sort((a, b) => b[1] - a[1])[0];
+      if (top) pick[h] = top[0];
+    }
+    const hs = Object.keys(pick);
+    if (!hs.length) continue;
+    const differ = hs.length === 2 && pick['123'] !== pick['456'];
+    if (onlyBoth && !differ) continue;
+    const next = differ ? { main: state.resp.assign[c.key] || pick['123'], by: pick } : { main: pick[hs[0]], by: null };
+    const cur = { main: state.resp.assign[c.key] || '', by: splitOf(c.key) };
+    if (JSON.stringify(next) === JSON.stringify({ main: cur.main, by: cur.by || null })) continue;
+    changes.push({ c, next, cur });
+  }
+  return { changes, unknown: [...unknown].sort((a, b) => b[1] - a[1]) };
+}
+
+function openAutoSplit() {
+  let onlyBoth = true;
+  const pn = (id) => (state.resp.people.find((p) => p.id === id) || {}).name || '—';
+  const draw = () => {
+    const plan = autoSplitPlan(onlyBoth);
+    const desc = (x) => (x.by ? HALVES.map(([h, l]) => `${l}: <b>${esc(pn(x.by[h] || x.main))}</b>`).join(' · ') : `<b>${esc(pn(x.main))}</b>`);
+    const dlg = dialog(`
+      <form method="dialog" class="dlg-form">
+        <div class="dlg-head"><h3>🤖 Ustalar bo'yicha taqsimlash</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
+        <div class="dlg-body" style="grid-template-columns:1fr">
+          ${plan.error ? `<p class="bad">${esc(plan.error)}</p>` : `
+          <p class="small muted">Har korxonaning Du–Chor va Pay–Shan kunlari uchun o'sha kunlari keladigan guruhlardagi eng ko'p o'quvchining ustasi mas'ul qilib tanlanadi (usta mas'ullar ro'yxatida bo'lishi kerak). Avval "📅 3+3" bo'limida guruh kunlarini belgilang.</p>
+          <label class="check"><input type="checkbox" id="as-both" ${onlyBoth ? 'checked' : ''}> Faqat ikki xil kunli korxonalar (boshqa korxonalarning mas'uliga tegilmasin)</label>
+          <p><b>${plan.changes.length}</b> ta korxona o'zgaradi.</p>
+          ${plan.changes.length ? `<ul class="small as-list">${plan.changes.slice(0, 200).map((x) => `<li><b>${esc(x.c.name)}</b><br>${desc(x.next)}${x.cur.main || x.cur.by ? ` <span class="muted">(oldin: ${x.cur.by ? HALVES.map(([h, l]) => `${l}: ${esc(pn(x.cur.by[h] || x.cur.main))}`).join(' · ') : esc(pn(x.cur.main))})</span>` : ''}</li>`).join('')}</ul>` : ''}
+          ${plan.unknown.length ? `<details><summary class="warn small">Mas'ullar ro'yxatida topilmagan ustalar (${plan.unknown.length})</summary><ul class="small">${plan.unknown.map(([u, n]) => `<li>${esc(u)} — ${n} o'quvchi</li>`).join('')}</ul><p class="small muted">Ularni "Mas'ullar" ro'yxatiga qo'shsangiz, taqsimlashda hisobga olinadi.</p></details>` : ''}`}
+        </div>
+        <div class="dlg-foot"><button type="button" data-close>Bekor qilish</button><button type="button" class="primary" id="as-go" ${plan.changes && plan.changes.length ? '' : 'disabled'}>Qo'llash</button></div>
+      </form>`);
+    dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
+    const cb = dlg.querySelector('#as-both');
+    if (cb) cb.onchange = () => { onlyBoth = cb.checked; draw(); };
+    dlg.querySelector('#as-go').onclick = async () => {
+      state.resp.assignBy = { ...(state.resp.assignBy || {}) };
+      for (const x of plan.changes) {
+        state.resp.assign[x.c.key] = x.next.main;
+        if (x.next.by) state.resp.assignBy[x.c.key] = x.next.by; else delete state.resp.assignBy[x.c.key];
+      }
+      dlg.close();
+      await respChanged();
+      renderAttendance();
+      toast(`${plan.changes.length} ta korxona taqsimlandi ✓`, 'ok');
+    };
+  };
+  draw();
 }
