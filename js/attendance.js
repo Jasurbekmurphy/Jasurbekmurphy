@@ -1,4 +1,4 @@
-/* global state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog */
+/* global state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
 'use strict';
 // Mas'ul shaxslar va Telegram bot orqali davomat.
 
@@ -39,6 +39,16 @@ async function botApi(path, opts = {}) {
   return data;
 }
 
+// ---- 3+3 tizim: guruhlar haftaning qaysi kunlari korxonada bo'ladi
+// '' = har kuni, '123' = Du–Chor, '456' = Pay–Shan (qolgan kunlari texnikumda)
+const SCHED = [['', 'Har kuni'], ['123', 'Du–Chor'], ['456', 'Pay–Shan']];
+const schedLabel = (d) => (SCHED.find(([k]) => k === d) || ['', d])[1];
+const groupKey = (g) => String(g ?? '').replace(/\s+/g, ' ').trim();
+const groupDays = (g) => ((state.resp.sched || {})[groupKey(g)] || '');
+const rowDays = (r, gi) => (gi >= 0 ? groupDays(r[gi]) : '');
+const weekdayOf = (date) => new Date(date + 'T00:00:00Z').getUTCDay(); // 0 = yakshanba
+const dueOn = (r, gi, date) => { const d = rowDays(r, gi); return !d || d.includes(String(weekdayOf(date))); };
+
 // Davomat uchun korxonalar: ta'lim muassasasi va shartnoma talab qilinmaydiganlar chiqariladi
 function attCompanies() {
   const data = companyGroups();
@@ -57,7 +67,7 @@ async function buildRoster() {
     const pid = state.resp.assign[c.key];
     if (!pid || !state.resp.people.some((p) => p.id === pid)) continue;
     const s = [];
-    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '']);
+    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi)]);
     s.sort((a, b) => a[2].localeCompare(b[2], 'uz', { numeric: true }) || a[1].localeCompare(b[1], 'uz'));
     companies.push({ k: c.key, n: c.name, p: pid, s });
   }
@@ -121,27 +131,34 @@ function renderAttendance() {
     <div class="seg wide att-tabs">
       <button data-sub="att" class="${attUi.sub === 'att' ? 'on' : ''}">📊 Davomat</button>
       <button data-sub="people" class="${attUi.sub === 'people' ? 'on' : ''}">👤 Mas'ullar</button>
+      <button data-sub="sched" class="${attUi.sub === 'sched' ? 'on' : ''}">📅 3+3</button>
       <button data-sub="bot" class="${attUi.sub === 'bot' ? 'on' : ''}">⚙️ Bot</button>
     </div>`;
-  const body = attUi.sub === 'people' ? peopleHtml() : attUi.sub === 'bot' ? botHtml() : attHtml();
+  const body = attUi.sub === 'people' ? peopleHtml() : attUi.sub === 'bot' ? botHtml() : attUi.sub === 'sched' ? schedHtml() : attHtml();
   box.innerHTML = tabs + body;
   box.querySelectorAll('[data-sub]').forEach((b) => (b.onclick = async () => {
     attUi.sub = b.dataset.sub;
     renderAttendance();
     if (attUi.sub === 'att') loadAttendance();
-    if (attUi.sub !== 'att') { await loadStatus(); renderAttendance(); }
+    if (attUi.sub === 'people' || attUi.sub === 'bot') { await loadStatus(); renderAttendance(); }
   }));
   if (attUi.sub === 'people') bindPeople(box);
+  else if (attUi.sub === 'sched') bindSched(box);
   else if (attUi.sub === 'bot') bindBot(box);
   else bindAtt(box);
 }
 
 // ---------------------------------------------------------------- 📊 Davomat
 function attModel() {
-  const { list, gi } = attCompanies();
+  const all = attCompanies();
+  const gi = all.gi;
+  const date = attUi.date || tkToday();
+  // Shu kuni korxonada bo'lishi kerak bo'lgan o'quvchilar (3+3 jadval bo'yicha)
+  const list = all.list.map((c) => ({ ...c, rows: c.rows.filter((r) => dueOn(r, gi, date)) })).filter((c) => c.rows.length);
   const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
   const items = new Map(((attUi.data && attUi.data.items) || []).map((x) => [x.ck, x]));
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
+  const offToday = all.list.filter((c) => people.has(state.resp.assign[c.key])).length - list.filter((c) => people.has(state.resp.assign[c.key])).length;
   const assigned = list.filter((c) => people.has(state.resp.assign[c.key]));
   const groups = new Map();
   for (const c of assigned) {
@@ -150,7 +167,7 @@ function attModel() {
     const it = items.get(c.key);
     groups.get(pid).push({ c, it });
   }
-  return { list, gi, nameIdx, items, people, assigned, groups, free: list.length - assigned.length };
+  return { list, gi, nameIdx, items, people, assigned, groups, free: list.length - assigned.length, offToday };
 }
 
 function attHtml() {
@@ -160,6 +177,11 @@ function attHtml() {
       <button class="primary" data-sub2="bot">⚙️ Bot sozlamasiga o'tish</button></div>`;
   }
   const m = attModel();
+  if (!m.assigned.length && m.offToday) {
+    return `<div class="att-bar"><label>Sana <input type="date" id="att-date" value="${esc(attUi.date)}" max="${tkToday()}"></label><button id="att-month">📅 Oylik jadval (Excel)</button></div>
+      <div class="box empty-hero"><div class="big">💤</div><h2>Bu kuni korxonalarda o'quvchi yo'q</h2>
+      <p class="muted">3+3 jadval bo'yicha ${m.offToday} ta korxonadagi o'quvchilar bu kuni texnikumda.</p></div>`;
+  }
   if (!m.assigned.length) {
     return `<div class="box empty-hero"><div class="big">👤</div><h2>Mas'ullar biriktirilmagan</h2>
       <p class="muted">Avval mas'ul shaxslarni qo'shing va ularga korxonalarni biriktiring.</p>
@@ -213,7 +235,8 @@ function attHtml() {
       <label>Sana <input type="date" id="att-date" value="${esc(attUi.date)}" max="${tkToday()}"></label>
       <button id="att-refresh">⟳ Yangilash</button>
       <input type="search" id="att-q" placeholder="Korxona yoki mas'ul…" value="${esc(attUi.q)}">
-      <button id="att-xl">⬇ Excel</button>
+      <button id="att-xl">⬇ Kunlik Excel</button>
+      <button id="att-month">📅 Oylik jadval (Excel)</button>
     </div>
     <p class="muted small att-live">${attUi.err ? `<span class="bad">⚠ ${esc(attUi.err)}</span>` : attUi.at ? `${isToday ? '🟢 Jonli: har 30 soniyada yangilanadi · ' : ''}oxirgi yangilanish ${new Date(attUi.at).toLocaleTimeString('uz')}` : 'Yuklanmoqda…'}</p>
     <div class="stats">
@@ -223,6 +246,7 @@ function attHtml() {
       <div class="ok"><b>${yes}</b><span>o'quvchi keldi</span></div>
       <div class="warn"><b>${no}</b><span>o'quvchi kelmadi</span></div>
     </div>
+    ${m.offToday ? `<p class="small muted">💤 ${m.offToday} ta korxonada bu kuni o'quvchi yo'q (3+3 jadval bo'yicha texnikumda).</p>` : ''}
     ${m.free ? `<p class="small warn">⚠ ${m.free} ta korxonaga mas'ul biriktirilmagan — <button class="link" data-sub2="people">biriktirish</button></p>` : ''}
     ${blocks || '<p class="muted">Hech narsa topilmadi.</p>'}`;
 }
@@ -236,6 +260,8 @@ function bindAtt(box) {
   const d = $('#att-date');
   if (!d) return;
   d.onchange = () => { attUi.date = d.value || tkToday(); attUi.data = null; attUi.at = 0; renderAttendance(); loadAttendance(); };
+  $('#att-month').onclick = openMonthDialog;
+  if (!$('#att-refresh')) { if (!attUi.data && !attUi.loading && !attUi.err) loadAttendance(); return; }
   $('#att-refresh').onclick = () => loadAttendance();
   $('#att-q').oninput = (e) => {
     attUi.q = e.target.value;
@@ -603,4 +629,179 @@ async function importPeopleFile(file) {
     renderAttendance();
     toast(`Saqlandi: +${added.length} mas'ul, ${changedAssign.length} ta biriktirish ✓`, 'ok');
   };
+}
+
+// ---------------------------------------------------------------- 📅 3+3 jadval (guruhlar kunlari)
+function schedGroups() {
+  const db = state.view;
+  const gi = dbFieldIdx('gurux', 'guruh');
+  if (!db || gi < 0) return { gi, list: [] };
+  const ci = dbFieldIdx('bosqich', 'kurs');
+  const m = new Map();
+  for (const r of db.rows) {
+    const g = groupKey(r[gi]);
+    if (!g) continue;
+    if (!m.has(g)) m.set(g, { g, kurs: ci >= 0 ? String(r[ci] ?? '').trim() : '', n: 0, work: 0 });
+    const x = m.get(g);
+    x.n++;
+    if (!studentContract(r).na) x.work++;
+  }
+  return { gi, list: [...m.values()].sort((a, b) => a.kurs.localeCompare(b.kurs, 'uz', { numeric: true }) || a.g.localeCompare(b.g, 'uz', { numeric: true })) };
+}
+
+function schedHtml() {
+  const { gi, list } = schedGroups();
+  if (gi < 0) return '<div class="box"><p class="muted">Bazada guruh ustuni topilmadi.</p></div>';
+  const sched = state.resp.sched || {};
+  const wd = weekdayOf(tkToday());
+  const WDN = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+  const todayN = list.filter((x) => x.work && (!sched[x.g] || sched[x.g].includes(String(wd)))).length;
+  const cnt = (d) => list.filter((x) => (sched[x.g] || '') === d).length;
+  const kurslar = [...new Set(list.map((x) => x.kurs).filter(Boolean))];
+  return `
+    <div class="box">
+      <h3>📅 3+3 tizim: guruhlar korxonaga qaysi kunlari boradi</h3>
+      <p class="small muted">Har bir guruh uchun tanlang. Qolgan kunlari o'quvchilar texnikumda bo'ladi — bot o'sha kuni ularni mas'ulga ko'rsatmaydi, davomat va oylik jadvalda bu kunlar bo'yalgan bo'ladi.
+        Bitta korxonada ikki guruh turli kunlarda bo'lsa (masalan 56-guruh Du–Chor, 65-guruh Pay–Shan), korxona bo'linmaydi: mas'ul har kuni faqat o'sha kungi guruhni ko'radi.</p>
+      <div class="sched-sum">
+        <span class="da-chip">Har kuni <b>${cnt('')}</b></span>
+        <span class="da-chip ok">Du–Chor <b>${cnt('123')}</b></span>
+        <span class="da-chip part">Pay–Shan <b>${cnt('456')}</b></span>
+        <span class="muted small">· Bugun (${WDN[wd]}) korxonada: <b>${todayN}</b> ta guruh</span>
+      </div>
+      ${kurslar.length > 1 ? `<div class="sched-bulk small">Tez belgilash: ${kurslar.map((k) => `<span class="sb-k">${esc(k)}-kurs: ${SCHED.map(([d, l]) => `<button data-sbulk="${esc(k)}" data-d="${d}">${l}</button>`).join('')}</span>`).join('')}</div>` : ''}
+      <div class="sched-list">${list.map((x) => `
+        <div class="sched-row ${sched[x.g] === '123' ? 'a' : sched[x.g] === '456' ? 'b' : ''}">
+          <div class="sched-name"><b>${esc(x.g)}${/guruh|гурух/i.test(x.g) ? '' : '-guruh'}</b><span class="muted small">${x.kurs ? esc(x.kurs) + '-kurs · ' : ''}${x.n} o'quvchi${x.work !== x.n ? ` · korxonada ${x.work}` : ''}</span></div>
+          <div class="seg sched-seg">${SCHED.map(([d, l]) => `<button data-sg="${esc(x.g)}" data-d="${d}" class="${(sched[x.g] || '') === d ? 'on' : ''}">${l}</button>`).join('')}</div>
+        </div>`).join('')}</div>
+    </div>`;
+}
+
+function bindSched(box) {
+  const set = async (groups, d) => {
+    state.resp.sched = { ...(state.resp.sched || {}) };
+    for (const g of groups) { if (d) state.resp.sched[g] = d; else delete state.resp.sched[g]; }
+    await respChanged();
+    renderAttendance();
+    if (typeof refreshDashAtt === 'function') refreshDashAtt();
+  };
+  box.querySelectorAll('[data-sg]').forEach((b) => (b.onclick = () => set([b.dataset.sg], b.dataset.d)));
+  box.querySelectorAll('[data-sbulk]').forEach((b) => (b.onclick = () => {
+    const gs = schedGroups().list.filter((x) => x.kurs === b.dataset.sbulk).map((x) => x.g);
+    if (confirm(`${b.dataset.sbulk}-kursning ${gs.length} ta guruhi "${schedLabel(b.dataset.d)}" qilinsinmi?`)) set(gs, b.dataset.d);
+  }));
+}
+
+// ---------------------------------------------------------------- 📅 Oylik davomat jadvali (Excel)
+const MONTHS_CYR = ['Январ', 'Феврал', 'Март', 'Апрел', 'Май', 'Июн', 'Июл', 'Август', 'Сентябр', 'Октябр', 'Ноябр', 'Декабр'];
+
+async function fetchMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const day = (d) => `${ym}-${String(d).padStart(2, '0')}`;
+  let items;
+  const r = await botApi(`/api/attendance?from=${day(1)}&to=${day(n)}`);
+  if (r.range) items = r.items;
+  else {
+    // eski server: kunma-kun so'rash
+    items = [];
+    for (let d = 1; d <= n && day(d) <= tkToday(); d++) {
+      const x = await botApi('/api/attendance?date=' + day(d));
+      items.push(...(x.items || []).map((it) => ({ ...it, date: day(d) })));
+    }
+  }
+  const byDate = new Map();
+  for (const it of items) {
+    if (!byDate.has(it.date)) byDate.set(it.date, new Map());
+    byDate.get(it.date).set(it.ck, it);
+  }
+  return { y, m, n, day, byDate };
+}
+
+function openMonthDialog() {
+  const ym = (attUi.date || tkToday()).slice(0, 7);
+  const dlg = dialog(`
+    <form method="dialog" class="dlg-form">
+      <div class="dlg-head"><h3>📅 Oylik davomat jadvali</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
+      <div class="dlg-body">
+        <label>Oy <input type="month" id="mo-ym" value="${ym}" max="${tkToday().slice(0, 7)}"></label>
+        <label>Ko'rinishi
+          <select id="mo-split">
+            <option value="one">Bitta varaq — korxonalar bo'yicha tartiblangan</option>
+            <option value="comp">Har korxona alohida varaqda</option>
+            <option value="person">Har mas'ul alohida varaqda</option>
+          </select>
+        </label>
+        <label>Mas'ul
+          <select id="mo-p"><option value="">Hammasi</option>${state.resp.people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>
+        </label>
+        <p class="small muted">Belgilar: <b>+</b> keldi, <b>н</b> kelmadi. Kulrang kataklar — o'quvchi u kuni texnikumda (3+3) yoki yakshanba.</p>
+      </div>
+      <div class="dlg-foot"><button type="button" data-close>Bekor qilish</button><button type="button" class="primary" id="mo-go">⬇ Yuklab olish</button></div>
+    </form>`);
+  dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
+  dlg.querySelector('#mo-go').onclick = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Tayyorlanmoqda…';
+    try {
+      await downloadMonth(dlg.querySelector('#mo-ym').value || ym, dlg.querySelector('#mo-split').value, dlg.querySelector('#mo-p').value);
+      dlg.close();
+    } catch (err) {
+      console.error(err);
+      toast("Jadval tayyorlanmadi: " + err.message, 'err');
+      btn.disabled = false; btn.textContent = '⬇ Yuklab olish';
+    }
+  };
+}
+
+async function downloadMonth(ym, split, onlyPid) {
+  if (!botReady()) throw new Error('Bot ulanmagan');
+  await Promise.all(state.view.rows.map(stuHash));
+  const M = await fetchMonth(ym);
+  const { list, gi } = attCompanies();
+  const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
+  const ci = dbFieldIdx('bosqich', 'kurs');
+  const ii = dbFieldIdx('talimmuassasasinomi');
+  const inst = (ii >= 0 && state.db.rows.map((r) => String(r[ii] ?? '').trim()).find(Boolean)) || 'Техникум';
+  const instName = inst.replace(/поли(техникум)/gi, '$1').replace(/poli(texnikum)/gi, '$1');
+  const people = new Map(state.resp.people.map((p) => [p.id, p]));
+
+  const comps = list
+    .map((c) => ({ c, pid: state.resp.assign[c.key] || '' }))
+    .filter((x) => !onlyPid || x.pid === onlyPid)
+    .sort((a, b) => (people.get(a.pid)?.name || 'я').localeCompare(people.get(b.pid)?.name || 'я', 'uz') || a.c.name.localeCompare(b.c.name, 'uz'));
+  if (!comps.length) throw new Error("Tanlangan mas'ulga korxona biriktirilmagan");
+
+  const rowsOf = (x) => {
+    const sorted = x.c.rows.slice().sort((a, b) => String(a[gi] ?? '').localeCompare(String(b[gi] ?? ''), 'uz', { numeric: true }) || String(a[nameIdx] ?? '').localeCompare(String(b[nameIdx] ?? ''), 'uz'));
+    return sorted.map((r) => {
+      const h = hashCache.get(studentKey(r));
+      let yes = 0, no = 0;
+      const marks = [], off = [];
+      for (let d = 1; d <= M.n; d++) {
+        const date = M.day(d);
+        const isOff = weekdayOf(date) === 0 || !dueOn(r, gi, date);
+        off.push(isOff);
+        const it = M.byDate.get(date) && M.byDate.get(date).get(x.c.key);
+        const v = it ? it.marks[h] : undefined;
+        if (v === 1) { yes++; marks.push('+'); } else if (v === 0) { no++; marks.push('н'); } else marks.push('');
+      }
+      const kurs = ci >= 0 ? r[ci] : '';
+      return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', x.c.name], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul: people.get(x.pid)?.name || '' };
+    });
+  };
+
+  const title = `${instName} ўқувчилари давомати (${MONTHS_CYR[M.m - 1]} ойи учун, ${M.y} й.)`;
+  const sheet = (name, xs) => ({ sheetName: name, title, monthLabel: `${MONTHS_CYR[M.m - 1]} ойи`, days: M.n, weekdays: Array.from({ length: M.n }, (_, i) => weekdayOf(M.day(i + 1))), rows: xs.flatMap(rowsOf) });
+  let sheets;
+  if (split === 'comp') sheets = comps.map((x) => sheet(x.c.name, [x]));
+  else if (split === 'person') {
+    const by = new Map();
+    for (const x of comps) { const k = x.pid || '-'; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+    sheets = [...by].map(([pid, xs]) => sheet(people.get(pid)?.name || "Mas'ulsiz", xs));
+  } else sheets = [sheet('Davomat', comps)];
+  const blob = await XlsxWrite.buildRegister({ sheets });
+  downloadBlob(blob, `Davomat ${ym}.xlsx`);
+  toast('Oylik jadval tayyor ✓', 'ok');
 }

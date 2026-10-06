@@ -607,3 +607,14 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .da-st { font-size: 12px; color: var(--muted); }
 .da-nums { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .da-nums .ok { color: var(--ok); } .da-nums .bad { color: var(--bad); } .da-nums .none { color: var(--muted); }
+
+/* 3+3 jadval */
+.sched-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+.sched-bulk { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 12px; align-items: center; }
+.sched-bulk .sb-k { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sched-bulk button { min-height: 28px; padding: 2px 10px; font-size: 12px; }
+.sched-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 8px; }
+.sched-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; background: var(--surface); }
+.sched-row.a { border-left-color: var(--ok); } .sched-row.b { border-left-color: var(--warn); }
+.sched-name { display: flex; flex-direction: column; min-width: 0; }
+.sched-seg button { padding: 2px 10px; font-size: 12px; }

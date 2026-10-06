@@ -12,6 +12,10 @@
 //   GET  /api/status       — bot holati, ulangan mas'ullar   (Authorization: Bearer ADMIN_KEY)
 //   POST /api/roster       — mas'ullar, korxonalar, o'quvchilar ro'yxati (saytdan)
 //   GET  /api/attendance?date=YYYY-MM-DD — kunlik davomat
+//   GET  /api/attendance?from=YYYY-MM-DD&to=YYYY-MM-DD — oraliq (oylik jadval uchun)
+//
+// O'quvchi: [xesh, ism, guruh, kunlar]. kunlar — korxonaga boradigan hafta kunlari
+// ("123" = Du–Chor, "456" = Pay–Shan, bo'sh = har kuni). Boshqa kunlari texnikumda.
 
 const PAGE = 25; // bitta sahifadagi o'quvchilar soni
 const MENU = '📋 Davomat';
@@ -26,6 +30,10 @@ const SCHEMA = [
 // Toshkent vaqti (UTC+5)
 const nowTk = () => new Date(Date.now() + 5 * 3600 * 1000);
 const today = () => nowTk().toISOString().slice(0, 10);
+const weekday = () => nowTk().getUTCDay(); // 0 = yakshanba
+const WD = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+// Bugun korxonada bo'lishi kerak bo'lgan o'quvchilar (indekslari)
+const dueIdx = (c) => c.s.map((s, i) => i).filter((i) => !c.s[i][3] || String(c.s[i][3]).includes(String(weekday())));
 const hhmm = (ms) => new Date(ms + 5 * 3600 * 1000).toISOString().slice(11, 16);
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const digits = (s) => String(s ?? '').replace(/\D+/g, '');
@@ -134,24 +142,30 @@ async function companiesView(env, uid) {
   if (!list) return { text: "Siz hali ulanmagansiz. /start buyrug'ini yuboring." };
   if (!list.length) return { text: "Sizga hozircha korxona biriktirilmagan. Admin bilan bog'laning." };
   const done = new Set((await env.DB.prepare('SELECT ck FROM att WHERE date = ?').bind(today()).all()).results.map((r) => r.ck));
+  const todayList = list.map((c) => ({ ...c, due: dueIdx(c).length })).filter((c) => c.due);
+  const rest = list.length - todayList.length;
+  const head = `📅 ${today()} · ${WD[weekday()]}`;
+  if (!todayList.length) return { text: `${head}\n\n💤 Bugun sizning korxonalaringizda o'quvchi yo'q — ular texnikumda.` };
   return {
-    text: `📅 ${today()}\nKorxonani tanlang:`,
+    text: `${head}\nKorxonani tanlang:${rest ? `\n\n<i>💤 Yana ${rest} ta korxonada bugun o'quvchi yo'q (texnikumda).</i>` : ''}`,
+    parse_mode: 'HTML',
     reply_markup: {
-      inline_keyboard: list.map((c) => [{ text: `${done.has(c.k) ? '✅' : '⬜'} ${c.n} (${c.s.length})`, callback_data: `c:${roster.v}:${c.ci}:0` }]),
+      inline_keyboard: todayList.map((c) => [{ text: `${done.has(c.k) ? '✅' : '⬜'} ${c.n} (${c.due})`, callback_data: `c:${roster.v}:${c.ci}:0` }]),
     },
   };
 }
 
 function companyView(roster, ci, marks, pg) {
   const c = roster.companies[ci];
-  const n = c.s.length;
+  const due = dueIdx(c);
+  const n = due.length;
   const pages = Math.max(1, Math.ceil(n / PAGE));
   pg = Math.min(Math.max(0, pg), pages - 1);
   let yes = 0, no = 0;
-  for (const s of c.s) { if (marks[s[0]] === 1) yes++; else if (marks[s[0]] === 0) no++; }
+  for (const i of due) { const v = marks[c.s[i][0]]; if (v === 1) yes++; else if (v === 0) no++; }
   const icon = (v) => (v === 1 ? '✅' : v === 0 ? '❌' : '⬜');
-  const rows = c.s.slice(pg * PAGE, pg * PAGE + PAGE).map((s, i) => {
-    const si = pg * PAGE + i;
+  const rows = due.slice(pg * PAGE, pg * PAGE + PAGE).map((si) => {
+    const s = c.s[si];
     return [{ text: `${icon(marks[s[0]])} ${s[1]}${s[2] ? ' · ' + s[2] : ''}`.slice(0, 64), callback_data: `t:${roster.v}:${ci}:${si}:${pg}` }];
   });
   if (pages > 1) {
@@ -211,21 +225,24 @@ async function onCallback(env, cq) {
     return answer(marks[s[0]] === 1 ? '✅ Keldi' : '❌ Kelmadi');
   }
   if (act === 'a') {
-    for (const s of c.s) marks[s[0]] = +parts[3];
+    for (const i of dueIdx(c)) marks[c.s[i][0]] = +parts[3];
     await setDraft(env, uid, c.k, marks);
     await edit(companyView(roster, ci, marks, +parts[4] || 0));
     return answer(parts[3] === '1' ? 'Hammasi keldi' : 'Hammasi kelmadi');
   }
   if (act === 's') {
-    const left = c.s.filter((s) => marks[s[0]] !== 1 && marks[s[0]] !== 0).length;
+    const due = dueIdx(c).map((i) => c.s[i]);
+    if (!due.length) return answer("Bugun bu korxonada o'quvchi yo'q", true);
+    for (const k of Object.keys(marks)) if (!due.some((s) => s[0] === k)) delete marks[k];
+    const left = due.filter((s) => marks[s[0]] !== 1 && marks[s[0]] !== 0).length;
     if (left) return answer(`Hamma o'quvchini belgilang — yana ${left} ta qoldi`, true);
     const at = Date.now();
     await env.DB.prepare('INSERT OR REPLACE INTO att (date, ck, pid, uid, at, marks) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(today(), c.k, pid, uid, at, JSON.stringify(marks)).run();
     await env.DB.prepare('DELETE FROM draft WHERE uid = ? AND ck = ?').bind(uid, c.k).run();
-    const yes = c.s.filter((s) => marks[s[0]] === 1).length;
+    const yes = due.filter((s) => marks[s[0]] === 1).length;
     await edit({
-      text: `✅ <b>Davomat saqlandi</b>\n\n🏢 ${esc(c.n)}\n📅 ${today()}  🕒 ${hhmm(at)}\n\n✅ Keldi: <b>${yes}</b>\n❌ Kelmadi: <b>${c.s.length - yes}</b>`,
+      text: `✅ <b>Davomat saqlandi</b>\n\n🏢 ${esc(c.n)}\n📅 ${today()}  🕒 ${hhmm(at)}\n\n✅ Keldi: <b>${yes}</b>\n❌ Kelmadi: <b>${due.length - yes}</b>`,
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: [[{ text: "✏️ O'zgartirish", callback_data: `c:${roster.v}:${ci}:0` }, { text: '📋 Boshqa korxona', callback_data: 'b' }]] },
     });
@@ -279,6 +296,12 @@ async function api(req, env, url) {
     return json({ ok: true, v: r.v });
   }
   if (url.pathname === '/api/attendance') {
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    const from = url.searchParams.get('from'), to = url.searchParams.get('to');
+    if (re.test(from || '') && re.test(to || '')) {
+      const rows = (await env.DB.prepare('SELECT date, ck, pid, uid, at, marks FROM att WHERE date >= ? AND date <= ?').bind(from, to).all()).results;
+      return json({ ok: true, range: true, from, to, today: today(), items: rows.map((r) => ({ ...r, marks: JSON.parse(r.marks) })) });
+    }
     const date = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('date') || '') ? url.searchParams.get('date') : today();
     const rows = (await env.DB.prepare('SELECT ck, pid, uid, at, marks FROM att WHERE date = ?').bind(date).all()).results;
     return json({ ok: true, date, today: today(), items: rows.map((r) => ({ ...r, marks: JSON.parse(r.marks) })) });

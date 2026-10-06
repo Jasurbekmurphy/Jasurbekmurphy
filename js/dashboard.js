@@ -1,4 +1,4 @@
-/* global attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global dueOn, attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -256,13 +256,14 @@ function refreshDashAtt() {
 function dashAttModel() {
   const ci = courseIdx();
   const inCourse = (r) => !dashUi.course || ci < 0 || String(r[ci] ?? '').trim() === dashUi.course;
-  const { list } = attCompanies();
+  const { list, gi } = attCompanies();
+  const day = tkToday();
   const items = new Map(((dashAtt.date === tkToday() && dashAtt.data && dashAtt.data.items) || []).map((x) => [x.ck, x]));
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
   const per = new Map();
   const tot = { comp: 0, went: 0, yes: 0, no: 0, none: 0, free: 0, freeStu: 0 };
   for (const c of list) {
-    const rows = c.rows.filter(inCourse);
+    const rows = c.rows.filter((r) => inCourse(r) && dueOn(r, gi, day)); // 3+3: bugun korxonada bo'ladiganlar
     if (!rows.length) continue;
     const pid = state.resp.assign[c.key];
     if (!people.has(pid)) { tot.free++; tot.freeStu += rows.length; continue; }
