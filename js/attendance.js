@@ -4,7 +4,7 @@
 
 const attUi = {
   sub: 'att', date: '', data: null, err: '', loading: false, at: 0, timer: null, status: null,
-  q: '', open: new Set(), splitOpen: new Set(), aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
+  q: '', open: new Set(), aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
 };
 const hashCache = new Map();
 const tkToday = () => new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -137,7 +137,22 @@ function attTick() {
   }, 30000);
 }
 
+// Kunlarga bo'lingan korxonada umumiy (asosiy) mas'ul bo'lmaydi: bo'sh kun asosiydan to'ldiriladi
+function normalizeSplits() {
+  const by = state.resp.assignBy || {};
+  let changed = false;
+  for (const ck of Object.keys(by)) {
+    const main = state.resp.assign[ck];
+    if (!main) continue;
+    for (const [h] of HALVES) if (!by[ck][h]) by[ck][h] = main;
+    delete state.resp.assign[ck];
+    changed = true;
+  }
+  return changed;
+}
+
 function renderAttendance() {
+  if (state.resp && normalizeSplits()) respChanged();
   const box = $('#att-body');
   if (!box) return;
   if (!state.db) { box.innerHTML = '<div class="box"><p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p></div>'; return; }
@@ -365,16 +380,16 @@ function peopleHtml() {
         ${state.resp.people.length ? `<div class="a-auto"><button id="a-auto">🤖 Ustalar bo'yicha kunlarga taqsimlash</button><span class="small muted">3+3 jadvalga qarab: har kunlari korxonaga o'sha kunlari keladigan guruhlarning ustasi biriktiriladi.</span></div>` : ''}
         <div class="a-list">${comps.map((c) => `
           ${(() => {
-            const hv = halvesOf(c), by = splitOf(c.key), open = !!by || attUi.splitOpen.has(c.key);
+            const hv = halvesOf(c), by = splitOf(c.key), open = !!by;
             const both = hv['123'].size && hv['456'].size;
             const gtxt = [['', ''], ['123', 'Du–Chor: '], ['456', 'Pay–Shan: ']].filter(([k]) => hv[k].size).map(([k, l]) => l + [...hv[k]].join(', ')).join(' · ');
             return `<div class="a-row ${ownersOf(c.key).length ? 'on' : ''} ${open ? 'split' : ''}">
             <div class="a-name"><b>${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
             <div class="a-sel">
-              <select data-assign="${esc(c.key)}" title="${open ? "Qolgan kunlar uchun asosiy mas'ul" : "Mas'ul"}">${opts(state.resp.assign[c.key] || '')}</select>
-              <button type="button" class="a-split-btn ${open ? 'on' : ''} ${both && !by ? 'hint' : ''}" data-split="${esc(c.key)}" title="Kunlar bo'yicha har xil mas'ul">📅⇄</button>
+              ${open ? `<span class="a-split-note small muted">Kunlar bo'yicha</span>` : `<select data-assign="${esc(c.key)}">${opts(state.resp.assign[c.key] || '')}</select>`}
+              <button type="button" class="a-split-btn ${open ? 'on' : ''} ${both && !by ? 'hint' : ''}" data-split="${esc(c.key)}" title="${open ? "Bitta mas'ulga qaytarish" : "Kunlar bo'yicha har xil mas'ul"}">📅⇄</button>
             </div>
-            ${open ? `<div class="a-halves">${HALVES.map(([h, l]) => `<label><span>${l}</span><select data-assignh="${h}" data-ck="${esc(c.key)}"><option value="">= asosiy mas'ul</option>${state.resp.people.map((p) => `<option value="${esc(p.id)}" ${(by || {})[h] === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>`).join('')}</div>` : ''}
+            ${open ? `<div class="a-halves">${HALVES.map(([h, l]) => `<label><span>${l}</span><select data-assignh="${h}" data-ck="${esc(c.key)}">${opts(by[h] || '')}</select></label>`).join('')}</div>` : ''}
           </div>`;
           })()}`).join('') || '<p class="muted small">Korxona topilmadi.</p>'}</div>
         <div class="row-btns">
@@ -430,20 +445,27 @@ function bindPeople(box) {
     state.resp.assignBy = { ...(state.resp.assignBy || {}) };
     const by = { ...(state.resp.assignBy[ck] || {}) };
     if (s.value) by[s.dataset.assignh] = s.value; else delete by[s.dataset.assignh];
-    if (Object.keys(by).length) state.resp.assignBy[ck] = by; else delete state.resp.assignBy[ck];
-    attUi.splitOpen.add(ck);
+    state.resp.assignBy[ck] = by; // bo'sh bo'lsa ham kunlar bo'yicha rejim saqlanadi
+    s.closest('.a-row').classList.toggle('on', !!ownersOf(ck).length);
     await respChanged();
-    renderAttendance();
   }));
   box.querySelectorAll('[data-split]').forEach((b) => (b.onclick = async () => {
     const ck = b.dataset.split;
-    if (splitOf(ck)) {
-      if (!confirm("Kunlar bo'yicha mas'ullar olib tashlansinmi? Faqat asosiy mas'ul qoladi.")) return;
+    const by = splitOf(ck);
+    state.resp.assignBy = { ...(state.resp.assignBy || {}) };
+    if (by) {
+      // bitta mas'ulga qaytarish: Du–Chor mas'uli (bo'lmasa Pay–Shan) qoladi
+      const keep = by['123'] || by['456'] || '';
+      if (by['123'] && by['456'] && by['123'] !== by['456'] && !confirm("Kunlar bo'yicha bo'linish olib tashlansinmi? Korxona bitta mas'ulga (Du–Chor mas'uli) qoladi.")) return;
       delete state.resp.assignBy[ck];
-      attUi.splitOpen.delete(ck);
-      await respChanged();
-    } else if (attUi.splitOpen.has(ck)) attUi.splitOpen.delete(ck);
-    else attUi.splitOpen.add(ck);
+      if (keep) state.resp.assign[ck] = keep; else delete state.resp.assign[ck];
+    } else {
+      // kunlarga bo'lish: hozirgi mas'ul ikkala kunga ham qo'yiladi, keyin birini almashtirasiz
+      const cur = state.resp.assign[ck] || '';
+      state.resp.assignBy[ck] = cur ? { '123': cur, '456': cur } : {};
+      delete state.resp.assign[ck];
+    }
+    await respChanged();
     renderAttendance();
   }));
   const au = $('#a-auto');
@@ -454,7 +476,10 @@ function bindPeople(box) {
     const keys = [...box.querySelectorAll('[data-assign]')].map((s) => s.dataset.assign);
     const p = state.resp.people.find((x) => x.id === pid);
     if (!confirm(`${keys.length} ta korxona ${p ? `"${p.name}"ga biriktirilsinmi` : "mas'ulsiz qoldirilsinmi"}?`)) return;
-    for (const k of keys) { if (pid) state.resp.assign[k] = pid; else delete state.resp.assign[k]; }
+    for (const k of keys) {
+      if (pid) state.resp.assign[k] = pid; else delete state.resp.assign[k];
+      if (state.resp.assignBy) delete state.resp.assignBy[k];
+    }
     await respChanged();
     renderAttendance();
   };
@@ -551,7 +576,7 @@ async function downloadPeopleTemplate() {
       sheetName: 'Korxonalar',
       title: "Korxonalar: \"Mas'ul\" ustuniga mas'ulning F.I.Sh ini yozing (Mas'ullar varag'idagidek)",
       headers: ['№', 'Korxona nomi', "O'quvchilar", 'Guruhlar', "Mas'ul (F.I.Sh)"],
-      rows: list.map((c, i) => [i + 1, c.name, c.rows.length, gi >= 0 ? [...new Set(c.rows.map((r) => r[gi]).filter((v) => v != null))].join(', ') : '', pname(state.resp.assign[c.key])]),
+      rows: list.map((c, i) => [i + 1, c.name, c.rows.length, gi >= 0 ? [...new Set(c.rows.map((r) => r[gi]).filter((v) => v != null))].join(', ') : '', splitOf(c.key) ? HALVES.map(([h, l]) => `${l}: ${pname(splitOf(c.key)[h]) || '—'}`).join('; ') : pname(state.resp.assign[c.key])]),
       minWidths: [5, 44, 12, 16, 34],
     },
   ] });
@@ -650,6 +675,7 @@ async function importPeopleFile(file) {
         if (!cn || !who) continue;
         const c = matchCompany(cn);
         if (!c) { missComp.add(cn); continue; }
+        if (splitOf(c.key)) continue; // kunlarga bo'lingan korxona saytda sozlanadi
         const p = findPerson(who, '', '');
         if (p) assigns.set(c.key, p.id); else missPerson.add(who);
       }
@@ -919,7 +945,7 @@ function autoSplitPlan(onlyBoth) {
     if (!hs.length) continue;
     const differ = hs.length === 2 && pick['123'] !== pick['456'];
     if (onlyBoth && !differ) continue;
-    const next = differ ? { main: state.resp.assign[c.key] || pick['123'], by: pick } : { main: pick[hs[0]], by: null };
+    const next = differ ? { main: '', by: pick } : { main: pick[hs[0]], by: null };
     const cur = { main: state.resp.assign[c.key] || '', by: splitOf(c.key) };
     if (JSON.stringify(next) === JSON.stringify({ main: cur.main, by: cur.by || null })) continue;
     changes.push({ c, next, cur });
@@ -952,7 +978,7 @@ function openAutoSplit() {
     dlg.querySelector('#as-go').onclick = async () => {
       state.resp.assignBy = { ...(state.resp.assignBy || {}) };
       for (const x of plan.changes) {
-        state.resp.assign[x.c.key] = x.next.main;
+        if (x.next.main) state.resp.assign[x.c.key] = x.next.main; else delete state.resp.assign[x.c.key];
         if (x.next.by) state.resp.assignBy[x.c.key] = x.next.by; else delete state.resp.assignBy[x.c.key];
       }
       dlg.close();
