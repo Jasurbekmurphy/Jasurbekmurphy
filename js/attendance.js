@@ -372,6 +372,7 @@ function peopleHtml() {
 
   return `
     <div class="att-grid">
+      <div class="p-col">
       <div class="box">
         <h3>Mas'ul shaxslar (${state.resp.people.length})</h3>
         <div class="p-xl">
@@ -386,6 +387,8 @@ function peopleHtml() {
           <button class="primary" type="submit">＋ Qo'shish</button>
         </form>
         <p class="fl-note">Mas'ul botga kirganda Telegram username yoki telefon raqami orqali avtomatik taniladi.</p>
+        <details class="p-fold" id="p-fold" ${attUi.plOpen ? 'open' : ''}>
+        <summary>👤 Mas'ullar ro'yxati (${state.resp.people.length}) — ${attUi.plOpen ? 'yopish' : 'ochish'}</summary>
         <div class="p-list">${state.resp.people.map((p) => `
           <div class="p-card">
             <div class="p-top">
@@ -395,6 +398,9 @@ function peopleHtml() {
             <div class="p-meta">${p.tg ? '✈️ @' + esc(String(p.tg).replace(/^@/, '')) : ''} ${p.phone ? '📞 ' + esc(p.phone) : ''} · 🏢 ${cnt.get(p.id) || 0} ta korxona</div>
             <div class="p-act"><button data-pedit="${esc(p.id)}">✏️</button><button class="danger" data-pdel="${esc(p.id)}">🗑</button></div>
           </div>`).join('') || '<p class="muted small">Hali mas\'ul qo\'shilmagan.</p>'}</div>
+        </details>
+      </div>
+      ${realHtml()}
       </div>
       <div class="box">
         <h3>Korxonalarga biriktirish</h3>
@@ -425,12 +431,13 @@ function peopleHtml() {
         </div>
         <p class="fl-note">${botReady() ? (attUi.pushedAt ? `Oxirgi yuborilgan: ${new Date(attUi.pushedAt).toLocaleTimeString('uz')}. ` : '') + "O'zgarishlar bir necha soniyadan keyin botga avtomatik yuboriladi." : 'Bot ulanmagan — "⚙️ Bot" bo\'limida sozlang.'}</p>
       </div>
-    </div>
-    ${realHtml()}`;
+    </div>`;
 }
 
 function bindPeople(box) {
   bindReal(box);
+  const fold = $('#p-fold');
+  if (fold) fold.ontoggle = () => { attUi.plOpen = fold.open; fold.querySelector('summary').textContent = `👤 Mas'ullar ro'yxati (${state.resp.people.length}) — ${fold.open ? 'yopish' : 'ochish'}`; };
   $('#p-tpl').onclick = downloadPeopleTemplate;
   $('#p-xlfile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importPeopleFile(f); };
   $('#p-add').onsubmit = async (e) => {

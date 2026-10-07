@@ -677,3 +677,12 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .rp-row input { min-width: 0; width: 100%; }
 @media (max-width: 600px) { .rp-row { grid-template-columns: minmax(0, 1fr) auto; } .rp-row .rp-name { grid-column: 1 / -1; } }
 .rp-h { margin: 6px 0; font-size: 14px; }
+
+/* Mas'ullar: yig'iladigan ro'yxat, chap ustunda haqiqiy joylar */
+.p-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.p-col .box, .p-col .rp-box { margin: 0; }
+.p-fold > summary { cursor: pointer; font-weight: 700; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); list-style: none; }
+.p-fold > summary::-webkit-details-marker { display: none; }
+.p-fold[open] > summary { margin-bottom: 8px; }
+.p-fold .p-list { max-height: 50vh; overflow: auto; padding-right: 4px; }
+.rp-list { max-height: 45vh; overflow: auto; }
