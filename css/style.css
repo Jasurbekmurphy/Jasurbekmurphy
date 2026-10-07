@@ -665,3 +665,4 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 /* Yangi o'quvchi: avtomatik qiymatlar */
 .auto-note { background: var(--accent-soft); color: var(--text-2); padding: 8px 12px; border-radius: 10px; margin: 0; }
 .fld.auto input, .fld.auto textarea { background: color-mix(in srgb, var(--ok) 9%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.a-row.pseudo { background: var(--accent-soft); }

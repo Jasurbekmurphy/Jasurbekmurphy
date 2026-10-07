@@ -287,7 +287,7 @@ function dashAttModel() {
   const per = new Map();
   const tot = { comp: 0, went: 0, yes: 0, no: 0, none: 0, free: 0, freeStu: 0 };
   for (const c of list) {
-    const rows = c.rows.filter((r) => inCourse(r) && dueOn(r, gi, day)); // 3+3: bugun korxonada bo'ladiganlar
+    const rows = c.rows.filter((r) => inCourse(r) && dueOn(r, gi, day, c)); // 3+3: bugun korxonada bo'ladiganlar
     if (!rows.length) continue;
     const pid = ownerOn(c.key, weekdayOf(day));
     if (!people.has(pid)) { tot.free++; tot.freeStu += rows.length; continue; }

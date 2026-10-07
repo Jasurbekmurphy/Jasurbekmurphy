@@ -1,4 +1,4 @@
-/* global state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
+/* global studentCategory, state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
 'use strict';
 // Mas'ul shaxslar va Telegram bot orqali davomat.
 
@@ -45,9 +45,10 @@ const SCHED = [['', 'Har kuni'], ['123', 'Du–Chor'], ['456', 'Pay–Shan']];
 const schedLabel = (d) => (SCHED.find(([k]) => k === d) || ['', d])[1];
 const groupKey = (g) => String(g ?? '').replace(/\s+/g, ' ').trim();
 const groupDays = (g) => ((state.resp.sched || {})[groupKey(g)] || '');
-const rowDays = (r, gi) => (gi >= 0 ? groupDays(r[gi]) : '');
+// c — korxona: ta'lim muassasasi / biriktirilmaganlar (pseudo) uchun 3+3 qo'llanmaydi, har kuni (Du–Shan)
+const rowDays = (r, gi, c) => (c && c.pseudo ? '123456' : gi >= 0 ? groupDays(r[gi]) : '');
 const weekdayOf = (date) => new Date(date + 'T00:00:00Z').getUTCDay(); // 0 = yakshanba
-const dueOn = (r, gi, date) => { const d = rowDays(r, gi); return !d || d.includes(String(weekdayOf(date))); };
+const dueOn = (r, gi, date, c) => { const d = rowDays(r, gi, c); return !d || d.includes(String(weekdayOf(date))); };
 
 // ---- Kunlarga qarab mas'ul: bitta korxonaga Du–Chor bir mas'ul, Pay–Shan boshqa mas'ul borishi mumkin
 // resp.assign[ck] — asosiy mas'ul; resp.assignBy[ck] = {'123': pid, '456': pid} — kunlar bo'yicha
@@ -62,13 +63,18 @@ function ownerOn(ck, wd) {
 const ownersOf = (ck) => [...new Set([state.resp.assign[ck], ...Object.values(splitOf(ck) || {})].filter(Boolean))];
 
 // Davomat uchun korxonalar: ta'lim muassasasi va shartnoma talab qilinmaydiganlar chiqariladi
+const PSEUDO = { inst: { key: '__inst', name: "Ta'lim muassasasi (3-toifa)" }, cat4: { key: '__cat4', name: 'Biriktirilmaganlar (4-toifa)' } };
 function attCompanies() {
   const data = companyGroups();
   if (!data) return { list: [], gi: -1 };
-  return {
-    gi: data.gi,
-    list: data.list.filter((c) => !c.inst).map((c) => ({ ...c, rows: c.rows.filter((r) => !studentContract(r).na) })).filter((c) => c.rows.length),
-  };
+  const list = data.list.filter((c) => !c.inst).map((c) => ({ ...c, rows: c.rows.filter((r) => !studentContract(r).na) })).filter((c) => c.rows.length);
+  // Korxonaga bormaydigan o'quvchilar ham davomat uchun alohida "korxona" bo'ladi: davomat texnikumda olinadi
+  const extra = [];
+  for (const cat of ['inst', 'cat4']) {
+    const rows = state.view.rows.filter((r) => studentCategory(r) === cat);
+    if (rows.length) extra.push({ ...PSEUDO[cat], pseudo: cat, rows, groups: [] });
+  }
+  return { gi: data.gi, list: [...extra, ...list] };
 }
 
 async function buildRoster() {
@@ -82,7 +88,7 @@ async function buildRoster() {
     for (const [h] of HALVES) { const x = (splitOf(c.key) || {})[h]; if (valid(x)) pd[h] = x; }
     if (!pid && !Object.keys(pd).length) continue;
     const s = [];
-    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi)]);
+    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi, c)]);
     s.sort((a, b) => a[2].localeCompare(b[2], 'uz', { numeric: true }) || a[1].localeCompare(b[1], 'uz'));
     companies.push({ k: c.key, n: c.name, p: pid, ...(Object.keys(pd).length ? { pd } : {}), s });
   }
@@ -184,7 +190,7 @@ function attModel() {
   const gi = all.gi;
   const date = attUi.date || tkToday();
   // Shu kuni korxonada bo'lishi kerak bo'lgan o'quvchilar (3+3 jadval bo'yicha)
-  const list = all.list.map((c) => ({ ...c, rows: c.rows.filter((r) => dueOn(r, gi, date)) })).filter((c) => c.rows.length);
+  const list = all.list.map((c) => ({ ...c, rows: c.rows.filter((r) => dueOn(r, gi, date, c)) })).filter((c) => c.rows.length);
   const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
   const items = new Map(((attUi.data && attUi.data.items) || []).map((x) => [x.ck, x]));
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
@@ -382,9 +388,9 @@ function peopleHtml() {
           ${(() => {
             const hv = halvesOf(c), by = splitOf(c.key), open = !!by;
             const both = hv['123'].size && hv['456'].size;
-            const gtxt = [['', ''], ['123', 'Du–Chor: '], ['456', 'Pay–Shan: ']].filter(([k]) => hv[k].size).map(([k, l]) => l + [...hv[k]].join(', ')).join(' · ');
-            return `<div class="a-row ${ownersOf(c.key).length ? 'on' : ''} ${open ? 'split' : ''}">
-            <div class="a-name"><b>${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
+            const gtxt = c.pseudo ? [...new Set(c.rows.map((r) => groupKey(r[gi])).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz', { numeric: true })).join(', ') + " · texnikumda, har kuni" : [['', ''], ['123', 'Du–Chor: '], ['456', 'Pay–Shan: ']].filter(([k]) => hv[k].size).map(([k, l]) => l + [...hv[k]].join(', ')).join(' · ');
+            return `<div class="a-row ${c.pseudo ? 'pseudo' : ''} ${ownersOf(c.key).length ? 'on' : ''} ${open ? 'split' : ''}">
+            <div class="a-name"><b>${c.pseudo === 'inst' ? '🎓 ' : c.pseudo === 'cat4' ? '🚫 ' : ''}${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
             <div class="a-sel">
               ${open ? `<span class="a-split-note small muted">Kunlar bo'yicha</span>` : `<select data-assign="${esc(c.key)}">${opts(state.resp.assign[c.key] || '')}</select>`}
               <button type="button" class="a-split-btn ${open ? 'on' : ''} ${both && !by ? 'hint' : ''}" data-split="${esc(c.key)}" title="${open ? "Bitta mas'ulga qaytarish" : "Kunlar bo'yicha har xil mas'ul"}">📅⇄</button>
@@ -868,7 +874,7 @@ async function downloadMonth(ym, split, onlyPid) {
       const marks = [], off = [];
       for (let d = 1; d <= M.n; d++) {
         const date = M.day(d);
-        const isOff = weekdayOf(date) === 0 || !dueOn(r, gi, date);
+        const isOff = weekdayOf(date) === 0 || !dueOn(r, gi, date, x.c);
         off.push(isOff);
         const it = M.byDate.get(date) && M.byDate.get(date).get(x.c.key);
         const v = it ? it.marks[h] : undefined;
@@ -876,7 +882,7 @@ async function downloadMonth(ym, split, onlyPid) {
       }
       const kurs = ci >= 0 ? r[ci] : '';
       // O'quvchining kunlariga qarab mas'ul (Du–Chor / Pay–Shan har xil bo'lishi mumkin)
-      const dys = rowDays(r, gi);
+      const dys = rowDays(r, gi, x.c);
       const ws = dys ? [+dys[0]] : [1, 4];
       const masul = [...new Set(ws.map((w) => people.get(ownerOn(x.c.key, w))?.name).filter(Boolean))].join(' / ');
       return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', x.c.name], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul };
@@ -926,6 +932,7 @@ function autoSplitPlan(onlyBoth) {
   };
   const changes = [];
   for (const c of list) {
+    if (c.pseudo) continue; // ta'lim muassasasi / biriktirilmaganlar — qo'lda biriktiriladi
     const pick = {};
     for (const [h] of HALVES) {
       const rows = c.rows.filter((r) => { const d = rowDays(r, gi); return !d || d === h; });
