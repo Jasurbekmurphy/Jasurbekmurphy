@@ -180,8 +180,12 @@ function parseMaster(buf, preferredSheet) {
 
 function rowKey(db, row) {
   const v = row[db.keyIdx];
-  if (v == null) return '';
-  return Match.canon(db.fields[db.keyIdx].name).includes('jshshir') ? Match.digits(v) : Match.nameKey(v);
+  const isJ = Match.canon(db.fields[db.keyIdx].name).includes('jshshir');
+  const k = v == null ? '' : isJ ? Match.digits(v) : Match.nameKey(v);
+  if (k || !isJ) return k;
+  // JShShIR yozilmagan o'quvchi — ism-familiya bo'yicha kalit (aks holda hammasi bitta bo'sh kalitga tushadi)
+  const n = db.nameIdx >= 0 ? Match.nameKey(row[db.nameIdx]) : '';
+  return n ? 'n:' + n : '';
 }
 
 function diffMasters(oldDb, newDb) {

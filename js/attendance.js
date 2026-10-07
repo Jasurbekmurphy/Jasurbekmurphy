@@ -14,7 +14,7 @@ const GUIDE_URL = 'https://github.com/Jasurbekmurphy/Jasurbekmurphy/blob/claude/
 // O'quvchi botga JShShIR o'rniga qisqa xesh bilan yuboriladi
 async function stuHash(row) {
   const k = studentKey(row);
-  if (!k) return '';
+  if (!k) { hashCache.set('', ''); return ''; } // kalitsiz qator — qayta-qayta hisoblanmasin
   if (hashCache.has(k)) return hashCache.get(k);
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('jb:' + k));
   const h = [...new Uint8Array(buf)].slice(0, 6).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -316,7 +316,7 @@ function bindAtt(box) {
   if (!botReady()) return;
   // xeshlar tayyor bo'lmasa — hisoblab, qayta chizish
   const rows = state.view.rows.filter((r) => !hashCache.has(studentKey(r)));
-  if (rows.length) { Promise.all(rows.map(stuHash)).then(() => renderAttendance()); return; }
+  if (rows.length && attUi.hashView !== state.view) { attUi.hashView = state.view; Promise.all(rows.map(stuHash)).then(() => renderAttendance()); return; }
   const d = $('#att-date');
   if (!d) return;
   d.onchange = () => { attUi.date = d.value || tkToday(); attUi.data = null; attUi.at = 0; renderAttendance(); loadAttendance(); };

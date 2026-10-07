@@ -311,8 +311,9 @@ function dashAttModel() {
 function dashAttHtml() {
   if (!botReady() || !state.db) return '';
   if (!state.resp.people.length) return '';
-  if (dashAtt.hashing || state.view.rows.some((r) => !hashCache.has(studentKey(r)))) {
+  if (dashAtt.hashing || (dashAtt.hashView !== state.view && state.view.rows.some((r) => !hashCache.has(studentKey(r))))) {
     if (!dashAtt.hashing) {
+      dashAtt.hashView = state.view;
       dashAtt.hashing = true;
       Promise.all(state.view.rows.map(stuHash)).then(() => { dashAtt.hashing = false; refreshDashAtt(); });
     }
