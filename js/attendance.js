@@ -40,7 +40,7 @@ async function botApi(path, opts = {}) {
 }
 
 // ---- 3+3 tizim: guruhlar haftaning qaysi kunlari korxonada bo'ladi
-// '' = har kuni, '123' = Du–Chor, '456' = Pay–Shan (qolgan kunlari texnikumda)
+// '' = har kuni (Du–Shan, yakshanba dam), '123' = Du–Chor, '456' = Pay–Shan (qolgan kunlari texnikumda)
 const SCHED = [['', 'Har kuni'], ['123', 'Du–Chor'], ['456', 'Pay–Shan']];
 const schedLabel = (d) => (SCHED.find(([k]) => k === d) || ['', d])[1];
 const groupKey = (g) => String(g ?? '').replace(/\s+/g, ' ').trim();
@@ -48,7 +48,8 @@ const groupDays = (g) => ((state.resp.sched || {})[groupKey(g)] || '');
 // c — korxona: ta'lim muassasasi / biriktirilmaganlar (pseudo) uchun 3+3 qo'llanmaydi, har kuni (Du–Shan)
 const rowDays = (r, gi, c) => (c && c.pseudo ? '123456' : gi >= 0 ? groupDays(r[gi]) : '');
 const weekdayOf = (date) => new Date(date + 'T00:00:00Z').getUTCDay(); // 0 = yakshanba
-const dueOn = (r, gi, date, c) => { const d = rowDays(r, gi, c); return !d || d.includes(String(weekdayOf(date))); };
+// "Har kuni" = dushanbadan shanbagacha (yakshanba dam)
+const dueOn = (r, gi, date, c) => { const d = rowDays(r, gi, c) || '123456'; return d.includes(String(weekdayOf(date))); };
 
 // ---- Kunlarga qarab mas'ul: bitta korxonaga Du–Chor bir mas'ul, Pay–Shan boshqa mas'ul borishi mumkin
 // resp.assign[ck] — asosiy mas'ul; resp.assignBy[ck] = {'123': pid, '456': pid} — kunlar bo'yicha
@@ -88,7 +89,7 @@ async function buildRoster() {
     for (const [h] of HALVES) { const x = (splitOf(c.key) || {})[h]; if (valid(x)) pd[h] = x; }
     if (!pid && !Object.keys(pd).length) continue;
     const s = [];
-    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi, c)]);
+    for (const r of c.rows) s.push([await stuHash(r), String(r[nameIdx] ?? ''), gi >= 0 ? String(r[gi] ?? '') : '', rowDays(r, gi, c) || '123456']);
     s.sort((a, b) => a[2].localeCompare(b[2], 'uz', { numeric: true }) || a[1].localeCompare(b[1], 'uz'));
     companies.push({ k: c.key, n: c.name, p: pid, ...(Object.keys(pd).length ? { pd } : {}), s });
   }

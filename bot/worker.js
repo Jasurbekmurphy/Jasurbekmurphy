@@ -15,7 +15,7 @@
 //   GET  /api/attendance?from=YYYY-MM-DD&to=YYYY-MM-DD — oraliq (oylik jadval uchun)
 //
 // O'quvchi: [xesh, ism, guruh, kunlar]. kunlar — korxonaga boradigan hafta kunlari
-// ("123" = Du–Chor, "456" = Pay–Shan, bo'sh = har kuni). Boshqa kunlari texnikumda.
+// ("123" = Du–Chor, "456" = Pay–Shan, bo'sh = har kuni, Du–Shan). Boshqa kunlari texnikumda.
 
 const PAGE = 25; // bitta sahifadagi o'quvchilar soni
 const MENU = '📋 Davomat';
@@ -33,7 +33,8 @@ const today = () => nowTk().toISOString().slice(0, 10);
 const weekday = () => nowTk().getUTCDay(); // 0 = yakshanba
 const WD = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
 // Bugun korxonada bo'lishi kerak bo'lgan o'quvchilar (indekslari)
-const dueIdx = (c) => c.s.map((s, i) => i).filter((i) => !c.s[i][3] || String(c.s[i][3]).includes(String(weekday())));
+// kunlar bo'sh bo'lsa — dushanbadan shanbagacha (yakshanba dam)
+const dueIdx = (c) => c.s.map((s, i) => i).filter((i) => String(c.s[i][3] || '123456').includes(String(weekday())));
 // Korxonaning bugungi mas'uli: Du–Chor va Pay–Shan uchun har xil bo'lishi mumkin (pd)
 const ownerNow = (c) => { const w = weekday(), h = w >= 1 && w <= 3 ? '123' : w >= 4 ? '456' : ''; return (c.pd && h && c.pd[h]) || c.p; };
 const hhmm = (ms) => new Date(ms + 5 * 3600 * 1000).toISOString().slice(11, 16);
@@ -153,7 +154,7 @@ async function companiesView(env, uid) {
   const todayList = list.map((c) => ({ ...c, due: dueIdx(c).length })).filter((c) => c.due);
   const rest = list.length - todayList.length;
   const head = `📅 ${today()} · ${WD[weekday()]}`;
-  if (!todayList.length) return { text: `${head}\n\n💤 Bugun sizning korxonalaringizda o'quvchi yo'q — ular texnikumda.` };
+  if (!todayList.length) return { text: weekday() === 0 ? `${head}\n\n💤 Bugun yakshanba — dam olish kuni.` : `${head}\n\n💤 Bugun sizning korxonalaringizda o'quvchi yo'q — ular texnikumda.` };
   return {
     text: `${head}\nKorxonani tanlang:${rest ? `\n\n<i>💤 Yana ${rest} ta korxonada bugun o'quvchi yo'q (texnikumda).</i>` : ''}`,
     parse_mode: 'HTML',
