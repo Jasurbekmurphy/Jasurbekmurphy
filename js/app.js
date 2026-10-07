@@ -215,6 +215,7 @@ const state = {
   script: 'orig',  // ko'rinish: 'orig' | 'lat' | 'cyr'
   marks: { comp: {}, stu: {} }, // korxona va o'quvchi shartnomasi belgilari
   resp: { people: [], assign: {} }, // mas'ul shaxslar va ularga biriktirilgan korxonalar
+  band: {},        // bandlik: o'quvchi rasmiy ish joyi, to'lov turi, oylik
   bot: { url: '', key: '' },          // davomat boti (Cloudflare Worker) manzili va kaliti
   compUi: { q: '', show: 'all', open: new Set(), group: '', view: 'list', cardGroup: {} },
   cloud: { session: null, token: '', sha: null, remember: true, dirty: false, remote: undefined, base: null },
@@ -743,6 +744,7 @@ async function saveLocal() {
     await Store.del('marks');
     await Store.del('resp');
     await Store.del('botcfg');
+    await Store.del('band');
     return;
   }
   if (state.db) await Store.set('db', state.db); else await Store.del('db');
@@ -750,6 +752,7 @@ async function saveLocal() {
   await Store.set('marks', state.marks);
   await Store.set('resp', state.resp);
   await Store.set('botcfg', state.bot);
+  await Store.set('band', state.band || {});
 }
 
 function onDbChanged() {
@@ -760,6 +763,7 @@ function onDbChanged() {
   renderCompanies();
   renderEdit();
   renderAttendance();
+  renderBand();
   if (state.db && !state.table) state.table = defaultTable();
   renderTable();
   if (state.tpl && state.db) renderTemplate();
@@ -1317,7 +1321,7 @@ function renderCompanies() {
 
 // ---------------------------------------------------------------- BULUT (kod bilan)
 function cloudPayload() {
-  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, marks: state.marks, resp: state.resp, bot: state.bot, db: { ...state.db, file: Sync.toB64(state.db.file) } };
+  return { v: 1, savedAt: Date.now(), token: state.cloud.token, templates: state.templates, marks: state.marks, resp: state.resp, band: state.band || {}, bot: state.bot, db: { ...state.db, file: Sync.toB64(state.db.file) } };
 }
 
 async function applyPayload(p) {
@@ -1326,6 +1330,7 @@ async function applyPayload(p) {
   state.templates = p.templates || [];
   state.marks = p.marks || { comp: {}, stu: {} };
   state.resp = p.resp || state.resp;
+  state.band = p.band || {};
   state.bot = p.bot || state.bot;
   state.cloud.token = p.token || state.cloud.token;
   state.table = null;
@@ -1368,7 +1373,7 @@ function syncBase(p) {
   return JSON.parse(JSON.stringify({
     db: dbSig(p.db), tpl: byKey(p.templates, 'name'),
     comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {},
-    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, bot: p.bot || null,
+    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, band: p.band || {}, bot: p.bot || null,
   }));
 }
 
@@ -1402,6 +1407,7 @@ function mergePayload(base, L, R, prefer) {
     ...R, v: 1, savedAt: Date.now(), token: R.token || L.token, db, bot: bot || L.bot || R.bot,
     templates: Object.values(mergeMap(b.tpl, l.tpl, r.tpl, prefer)),
     marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer) },
+    band: mergeMap(b.band, l.band, r.band, prefer),
     resp: { ...(R.resp || {}), people: Object.values(people), assign, assignBy, sched: mergeMap(b.sched, l.sched, r.sched, prefer) },
   };
 }
@@ -1581,8 +1587,8 @@ function renderCloud() {
     $('#cl-logout').onclick = async () => {
       if (!confirm('Bu qurilmadan baza va kod o\'chirilsinmi? (Bulutdagi baza saqlanib qoladi)')) return;
       state.cloud = { session: null, token: '', sha: null, remember: true, dirty: false, remote: true };
-      state.db = null; state.templates = []; state.table = null; state.marks = { comp: {}, stu: {} };
-      await Store.del('cloud'); await Store.del('db'); await Store.del('templates'); await Store.del('marks'); await Store.del('resp'); await Store.del('botcfg');
+      state.db = null; state.templates = []; state.table = null; state.marks = { comp: {}, stu: {} }; state.band = {};
+      await Store.del('cloud'); await Store.del('db'); await Store.del('templates'); await Store.del('marks'); await Store.del('resp'); await Store.del('botcfg'); await Store.del('band');
       onDbChanged();
     };
     return;
@@ -1708,6 +1714,7 @@ async function init() {
     state.marks = (await Store.get('marks')) || { comp: {}, stu: {} };
     state.resp = (await Store.get('resp')) || state.resp;
     state.bot = (await Store.get('botcfg')) || state.bot;
+    state.band = (await Store.get('band')) || {};
     const saved = await Store.get('cloud');
     if (saved && saved.key) {
       Object.assign(state.cloud, { session: { key: saved.key, salt: saved.salt, iter: saved.iter }, token: saved.token, sha: saved.sha, dirty: !!saved.dirty, at: saved.at, remember: true });

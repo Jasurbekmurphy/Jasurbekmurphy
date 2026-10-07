@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=26">
+  <link rel="stylesheet" href="css/style.css?v=27">
 </head>
 <body>
   <div class="app">
@@ -29,6 +29,7 @@
         <button class="tab" data-tab="p-table" data-title="Jadval yaratish" data-sub="Filtr va ustunlar bilan o'z jadvalingizni tuzing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zM3 10h18M3 15h18M9 5v14"/></svg><span class="t-long">Jadval yaratish</span><span class="t-short">Jadval</span></button>
         <button class="tab" data-tab="p-comp" data-title="Korxonalar" data-sub="Korxonalar, guruhlar va shartnomalar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V7l6-3v17M10 21V9l10 3v9M3 21h18M14 15h2M14 18h2"/></svg><span class="t-long">Korxonalar</span><span class="t-short">Korxona</span></button>
         <button class="tab" data-tab="p-att" data-title="Mas'ul va davomat" data-sub="Mas'ullar Telegram bot orqali o'quvchilar davomatini belgilaydi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9V4zM7 5H5v16h14V5h-2M8.5 13.5l2.5 2.5 5-5"/></svg><span class="t-long">Mas'ul va davomat</span><span class="t-short">Davomat</span></button>
+        <button class="tab" data-tab="p-band" data-title="Bandlik" data-sub="O'quvchilar rasmiy qayerda ishlaydi va qancha oylik oladi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v12H4V8zM9 8V5h6v3M4 13h16M11 13v2h2v-2"/></svg><span class="t-long">Bandlik</span><span class="t-short">Bandlik</span></button>
       </nav>
       <div class="side-foot">
         <span class="side-cap">Yozuv</span>
@@ -117,24 +118,28 @@
         <section class="panel" id="p-att" hidden>
           <div id="att-body"></div>
         </section>
+        <section class="panel" id="p-band" hidden>
+          <div id="band-body"></div>
+        </section>
       </main>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
 
-  <script src="vendor/xlsx.full.min.js?v=26"></script>
-  <script src="vendor/jszip.min.js?v=26"></script>
-  <script src="js/match.js?v=26"></script>
-  <script src="js/xlsxfill.js?v=26"></script>
-  <script src="js/xlsxwrite.js?v=26"></script>
-  <script src="js/filters.js?v=26"></script>
-  <script src="js/sync.js?v=26"></script>
-  <script src="js/translit.js?v=26"></script>
-  <script src="js/spell.js?v=26"></script>
-  <script src="js/edit.js?v=26"></script>
-  <script src="js/attendance.js?v=26"></script>
-  <script src="js/dashboard.js?v=26"></script>
-  <script src="js/app.js?v=26"></script>
+  <script src="vendor/xlsx.full.min.js?v=27"></script>
+  <script src="vendor/jszip.min.js?v=27"></script>
+  <script src="js/match.js?v=27"></script>
+  <script src="js/xlsxfill.js?v=27"></script>
+  <script src="js/xlsxwrite.js?v=27"></script>
+  <script src="js/filters.js?v=27"></script>
+  <script src="js/sync.js?v=27"></script>
+  <script src="js/translit.js?v=27"></script>
+  <script src="js/spell.js?v=27"></script>
+  <script src="js/edit.js?v=27"></script>
+  <script src="js/attendance.js?v=27"></script>
+  <script src="js/band.js?v=27"></script>
+  <script src="js/dashboard.js?v=27"></script>
+  <script src="js/app.js?v=27"></script>
 </body>
 </html>

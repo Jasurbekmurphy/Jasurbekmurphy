@@ -632,3 +632,32 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .a-halves select { width: 100%; min-width: 0; }
 .a-bulk select, .a-bar select, .a-bar input { max-width: 100%; min-width: 0; }
 .a-split-note { flex: 1; font-weight: 600; }
+
+/* Bandlik */
+.band-bar, .band-xl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.band-bar { margin-bottom: 10px; }
+.band-bar input[type=search] { flex: 1 1 220px; min-width: 0; }
+.band-bar select { width: auto; flex: 0 1 200px; max-width: 100%; min-width: 0; }
+@media (max-width: 600px) { .band-bar select { flex: 1 1 140px; } }
+.bd-name b { color: var(--text); }
+.band-list { padding: 8px 12px; }
+.band-row { display: grid; grid-template-columns: 34px minmax(160px, 1.2fr) minmax(160px, 1.3fr) auto 130px; gap: 8px 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.band-row:last-of-type { border-bottom: 0; }
+.band-row.on { background: color-mix(in srgb, var(--ok) 6%, transparent); }
+.band-head { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+.bd-n { color: var(--muted); font-size: 12px; text-align: right; }
+.bd-name { display: flex; flex-direction: column; min-width: 0; } .bd-name b { word-break: break-word; }
+.band-row input { min-width: 0; width: 100%; }
+.bd-s { text-align: right; font-variant-numeric: tabular-nums; }
+.bd-t button { padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 860px) {
+  .band-head { display: none; }
+  .band-row { grid-template-columns: 26px auto minmax(0, 1fr); padding: 10px 2px; }
+  .band-row .bd-n { grid-row: 1; align-self: start; padding-top: 2px; }
+  .band-row .bd-name { grid-column: 2 / -1; }
+  .band-row .bd-w { grid-column: 2 / -1; }
+  .band-row .bd-t { grid-column: 2; justify-self: start; }
+  .band-row .bd-s { grid-column: 3; }
+}
+@media (max-width: 959px) { .tabs { gap: 0; } .tab { font-size: 10px; padding: 6px 0; letter-spacing: -.15px; } }
+@media (max-width: 380px) { .tab { font-size: 9px; } }
