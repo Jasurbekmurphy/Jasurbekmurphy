@@ -12,6 +12,7 @@ const bandOf = (r) => (state.band || {})[studentKey(r)] || {};
 
 let bandTimer = null;
 async function bandChanged() {
+  state.stale = true; // dashboard ochilganda yangilanadi
   await saveLocal();
   clearTimeout(bandTimer);
   bandTimer = setTimeout(() => cloudPush(), 2500);

@@ -1,4 +1,4 @@
-/* global dueOn, ownerOn, weekdayOf, attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
+/* global bandOf, bandUi, renderBand, fmtSum, dueOn, ownerOn, weekdayOf, attCompanies, botReady, botApi, tkToday, stuHash, hashCache, studentKey, attUi, renderAttendance, toast, Spell, companyKey, state, $, esc, Match, Filters, showTab, renderTable, defaultTable, dbFieldIdx, companyGroups, studentContract, jshshirIssues, renderCompanies, editUi, renderEdit */
 'use strict';
 // Dashboard: barcha asosiy ko'rsatkichlar bir joyda.
 
@@ -126,6 +126,13 @@ function renderDashboard() {
   const iss = jshshirIssues(state.db);
   const spellN = Spell.scan(state.db).length;
   const problems = iss.bad.length + iss.dups.length;
+  // Bandlik (alohida bo'lim ma'lumotlari)
+  const bands = raw.map(bandOf);
+  const bWork = bands.filter((x) => x.w).length;
+  const bOylik = bands.filter((x) => x.t === 'oylik').length;
+  const bNaqd = bands.filter((x) => x.t === 'naqd').length;
+  const bSums = bands.filter((x) => x.s).map((x) => x.s);
+  const bAvg = bSums.length ? Math.round(bSums.reduce((a, b) => a + b, 0) / bSums.length) : 0;
   const groupsN = gi >= 0 ? new Set(rows.map((r) => r[gi]).filter((v) => v != null)).size : 0;
 
   const kpis = [
@@ -135,6 +142,8 @@ function renderDashboard() {
     comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `🤝 hamkorlik: ${compWith} · 📋 buyruq: ${orderWith}`, pct: compN ? (compWith / compN) * 100 : 0 }),
     kpi({ id: 'stuc', label: "O'quvchi shartnomasi", icon: '📄', value: stuWith, of: need, pct: need ? (stuWith / need) * 100 : 0,
       sub: `${need - stuWith} ta o'quvchida yo'q` + (instN ? ` · 🎓 ${instN} ta ta'lim muassasasida` : '') + (cat4N ? ` · ${cat4N} ta 4-toifa` : ''), status: stuWith === need ? 'ok' : 'warn' }),
+    kpi({ id: 'band', label: 'Bandlik (rasmiy ishlaydi)', icon: '💼', value: bWork, of: total, pct: pct(bWork),
+      sub: bWork || bOylik || bNaqd ? `💳 oylik: ${bOylik} · 💵 naqd: ${bNaqd}${bAvg ? ` · o'rtacha ${fmtSum(bAvg)} so'm` : ''}` : "hali kiritilmagan · bosib Bandlik bo'limini oching" }),
     cat4N ? kpi({ id: 'cat4', label: '4-toifa (korxonasiz)', icon: '🚫', value: cat4N, of: total, pct: pct(cat4N), sub: "korxonaga biriktirilmagan o'quvchilar · bosib ro'yxatni oching", status: 'warn' }) : null,
     kpi({ id: 'issues', label: "Ma'lumotdagi xatolar", icon: problems ? '⚠️' : '✓', value: problems, status: problems ? 'bad' : 'ok',
       sub: (problems ? `JShShIR xato: ${iss.bad.length} · dublikat: ${iss.dups.length}` : 'JShShIR hammasi to\'g\'ri') + (spellN ? ` · ✍️ imlo: ${spellN}` : '') }),
@@ -151,6 +160,13 @@ function renderDashboard() {
     const per = new Map();
     raw.forEach((r) => { if (cfi >= 0 && r[cfi] != null && String(r[cfi]).trim()) { const k = companyKey(r[cfi]); per.set(k, (per.get(k) || 0) + 1); } });
     charts.push(barChart('c', "O'quvchilar soni bo'yicha korxonalar", compList.map((c) => [c.name, per.get(c.key) || 0]).sort((a, b) => b[1] - a[1]), { limit: 10, hint: 'bosib korxonani oching' }));
+  }
+  if (bWork) {
+    const per = new Map();
+    for (const x of bands) if (x.w) per.set(x.w, (per.get(x.w) || 0) + 1);
+    charts.push(barChart('b', 'Bandlik: ish joylari', [...per].sort(sortCnt), { limit: 10, hint: "bosib ro'yxatni oching" }));
+    const pays = [['Oylik', bOylik], ['Naqd pul', bNaqd], ["Ko'rsatilmagan", bWork - bOylik - bNaqd]].filter(([, n]) => n > 0);
+    charts.push(barChart('bt', "Bandlik: to'lov turi", pays, { hint: "bosib ro'yxatni oching" }));
   }
   if (mi >= 0) charts.push(barChart('m', 'Yashash joyi (MFY)', countBy(rows, mi).sort(sortCnt), { limit: 10 }));
   else if (hi >= 0) charts.push(barChart('h', 'Yashash hududi', countBy(rows, hi).sort(sortCnt), { limit: 10 }));
@@ -202,6 +218,13 @@ function renderDashboard() {
   }));
   box.querySelectorAll('.bar-row').forEach((b) => (b.onclick = () => {
     const id = b.dataset.chart, v = b.dataset.v;
+    if (id === 'b' || id === 'bt') {
+      Object.assign(bandUi, { q: id === 'b' ? v : '', group: '', kurs: dashUi.course || '', limit: 100,
+        show: id === 'b' ? 'work' : v === 'Oylik' ? 'oylik' : v === 'Naqd pul' ? 'naqd' : 'work' });
+      renderBand();
+      showTab('p-band');
+      return;
+    }
     if (id === 'c') {
       state.compUi.q = v;
       renderCompanies();
@@ -220,6 +243,7 @@ function renderDashboard() {
       if (i >= 0) openTableWith(stay, String(state.view.rows[i][stay]));
     }
     else if (id === 'comp') showTab('p-comp');
+    else if (id === 'band') { Object.assign(bandUi, { q: '', group: '', kurs: dashUi.course || '', show: 'all', limit: 100 }); renderBand(); showTab('p-band'); }
     else if (id === 'cat4') openTableWith(vfield('stu'), '4-toifa');
     else if (id === 'stuc') openTableWith(vfield('stu'), '−');
     else if (id === 'issues') { editUi.mode = iss.bad.length ? 'bad' : iss.dups.length ? 'dup' : 'all'; renderEdit(); showTab('p-edit'); }
