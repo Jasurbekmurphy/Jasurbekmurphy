@@ -1,4 +1,4 @@
-/* global Spell, Filters, state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader */
+/* global Spell, Filters, state, Match, esc, toast, $, saveLocal, onDbChanged, cloudPush, rowKey, companyKey, computeView, renderHeader, Translit */
 'use strict';
 // Bazani ilovaning o'zida tahrirlash, tekshiruv (JShShIR), korxona nomlarini tartiblash,
 // va yangi jadvalni bazaga birlashtirish (merge).
@@ -455,12 +455,82 @@ function dialog(html) {
   return dlg;
 }
 
+// ---- Yangi o'quvchi: avtomatik qiymatlar va alifbo bo'yicha joylash
+const isEmptyV = (v) => v == null || String(v).trim() === '';
+const numIdx = (db) => db.fields.findIndex((f) => /^(№|n|no|t\/?r|tartib)/i.test(String(f.label || f.name).trim()));
+// O'quvchiga xos ustunlar — avtomatik to'ldirilmaydi
+function personalField(db, i) {
+  const c = Match.canon(db.fields[i].name);
+  return i === db.nameIdx || i === numIdx(db) || /jshshir|pasport|passport|telefon|tugilgan|fish|familiya|manzil|uy/.test(c);
+}
+// Ustundagi deyarli hamma qatorda bir xil qiymat bo'lsa — o'sha qiymat (to'ldirilgan qatorlarning 95%+)
+function commonValue(rows, i) {
+  const m = new Map();
+  let n = 0;
+  for (const r of rows) {
+    if (isEmptyV(r[i])) continue;
+    n++;
+    const k = String(r[i]).trim();
+    if (!m.has(k)) m.set(k, { v: r[i], c: 0 });
+    m.get(k).c++;
+  }
+  if (!n) return undefined;
+  const top = [...m.values()].sort((a, b) => b.c - a.c)[0];
+  return top.c / n >= 0.95 && n >= Math.min(3, rows.length) ? top.v : undefined;
+}
+function newDefaults(db, groupVal) {
+  const gi = db.fields.findIndex((f) => /gurux|guruh/.test(Match.canon(f.name)));
+  const rows = groupVal != null && gi >= 0 ? db.rows.filter((r) => String(r[gi] ?? '').trim() === String(groupVal).trim()) : db.rows;
+  const out = new Map();
+  if (!rows.length) return out;
+  db.fields.forEach((_, i) => {
+    if (personalField(db, i) || i === gi) return;
+    const v = commonValue(rows, i);
+    if (v !== undefined) out.set(i, v);
+  });
+  return out;
+}
+
+// Yangi qatorni guruh ichida alifbo bo'yicha joylash, № ustunini qayta raqamlash
+function insertSorted(db, vals) {
+  const gi = db.fields.findIndex((f) => /gurux|guruh/.test(Match.canon(f.name)));
+  const ni = db.nameIdx >= 0 ? db.nameIdx : 0;
+  const cyr = db.rows.filter((r) => /[Ѐ-ӿ]/.test(String(r[ni] ?? ''))).length >= db.rows.length / 2;
+  const norm = (v) => { const t = String(v ?? '').trim(); return cyr ? Translit.toCyrillic(t) : Translit.toLatin(t); };
+  const coll = new Intl.Collator(cyr ? 'uz-Cyrl' : 'uz', { sensitivity: 'base', numeric: true });
+  const g = gi >= 0 ? String(vals[gi] ?? '').trim() : '';
+  const name = norm(vals[ni]);
+  let at = db.rows.length;
+  const same = [];
+  db.rows.forEach((r, i) => { if (gi < 0 || String(r[gi] ?? '').trim() === g) same.push(i); });
+  if (same.length) {
+    const after = same.find((i) => coll.compare(norm(db.rows[i][ni]), name) > 0);
+    at = after != null ? after : same[same.length - 1] + 1;
+  } else if (g) {
+    // guruh yangi bo'lsa — guruh raqami bo'yicha keyingi guruhdan oldin
+    const nxt = db.rows.findIndex((r) => coll.compare(String(r[gi] ?? ''), g) > 0);
+    if (nxt >= 0) at = nxt;
+  }
+  db.rows.splice(at, 0, vals);
+  // № ustuni ketma-ket bo'lsa — qayta raqamlash
+  const k = numIdx(db);
+  if (k >= 0) {
+    const seq = db.rows.filter((r, i) => i !== at && typeof r[k] === 'number').length;
+    if (seq >= (db.rows.length - 1) * 0.8) db.rows.forEach((r, i) => { r[k] = i + 1; });
+    else if (isEmptyV(vals[k])) vals[k] = at + 1;
+  }
+  return at;
+}
+
 function openRecord(ri) {
   const db = state.db;
   const isNew = ri < 0;
-  const row = isNew ? db.fields.map(() => null) : db.rows[ri];
+  const defs = isNew ? newDefaults(db) : new Map();
+  const row = isNew ? db.fields.map((_, i) => (defs.has(i) ? defs.get(i) : null)) : db.rows[ri];
   const iss = jshshirIssues(db);
   const nameIdx = db.nameIdx >= 0 ? db.nameIdx : 0;
+  const gIdx = db.fields.findIndex((f) => /gurux|guruh/.test(Match.canon(f.name)));
+  const nIdx = numIdx(db);
   const dlg = dialog(`
     <form method="dialog" class="dlg-form">
       <div class="dlg-head">
@@ -468,13 +538,14 @@ function openRecord(ri) {
         <button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button>
       </div>
       <div class="dlg-body">
-        ${db.fields.map((f, i) => `
-          <label class="fld ${i === iss.ji ? 'jfld' : ''}">${esc(f.label)}
+        ${isNew ? `<p class="small auto-note">🪄 Hamma o'quvchida bir xil bo'lgan qiymatlar avtomatik qo'yildi (yashil). Guruhni yozsangiz, o'sha guruhga xos qiymatlar ham to'ldiriladi. № raqami saqlangandan keyin alifbo bo'yicha qo'yiladi.</p>` : ''}
+        ${db.fields.map((f, i) => (isNew && i === nIdx ? '' : `
+          <label class="fld ${i === iss.ji ? 'jfld' : ''} ${defs.has(i) ? 'auto' : ''}">${esc(f.label)}
             ${String(row[i] ?? '').length > 60 || String(row[i] ?? '').includes('\n')
               ? `<textarea data-fi="${i}" rows="2">${esc(row[i] ?? '')}</textarea>`
               : `<input data-fi="${i}" value="${esc(row[i] ?? '')}" ${i === iss.ji ? 'inputmode="numeric" maxlength="20"' : ''}>`}
             ${i === iss.ji ? '<small class="jmsg"></small>' : ''}
-          </label>`).join('')}
+          </label>`)).join('')}
       </div>
       <div class="dlg-foot">
         ${isNew ? '' : '<button type="button" class="danger" data-del>O\'chirish</button>'}
@@ -499,16 +570,34 @@ function openRecord(ri) {
     return ok;
   };
   if (jin) { jin.oninput = checkJ; checkJ(); }
+  if (isNew) {
+    // Qo'lda o'zgartirilgan katak avtomatik qiymat bilan almashtirilmaydi
+    dlg.querySelectorAll('[data-fi]').forEach((el) => el.addEventListener('input', () => { el.dataset.touched = '1'; el.closest('.fld').classList.remove('auto'); }));
+    const gin = gIdx >= 0 ? dlg.querySelector(`[data-fi="${gIdx}"]`) : null;
+    if (gin) gin.addEventListener('change', () => {
+      const gd = newDefaults(db, gin.value.trim());
+      const base = newDefaults(db);
+      db.fields.forEach((_, i) => {
+        const el = dlg.querySelector(`[data-fi="${i}"]`);
+        if (!el || el === gin || el.dataset.touched) return;
+        const v = gd.has(i) ? gd.get(i) : base.get(i);
+        el.value = v == null ? '' : String(v);
+        el.closest('.fld').classList.toggle('auto', v != null);
+      });
+    });
+  }
   dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
   dlg.querySelector('[data-save]').onclick = async () => {
     if (!checkJ() && !confirm('JShShIR xato yoki takroriy. Baribir saqlansinmi?')) return;
+    // Yangi o'quvchida ustun turini (son/matn) bazadagi qiymatlardan olamiz
+    const sample = (i) => (isNew ? (db.rows.find((r) => !isEmptyV(r[i])) || [])[i] : row[i]);
     const vals = db.fields.map((_, i) => {
       const el = dlg.querySelector(`[data-fi="${i}"]`);
-      return parseInputValue(el.value, row[i]);
+      return el ? parseInputValue(el.value, sample(i)) : null;
     });
     if (isNew) {
-      if (vals.every((v) => v == null)) { dlg.close(); return; }
-      db.rows.push(vals);
+      if (vals[nameIdx] == null && vals.every((v, i) => v == null || defs.has(i))) { dlg.close(); return; }
+      insertSorted(db, vals);
     } else {
       // Kalit (JShShIR) o'zgarsa — shartnoma belgisini yangi kalitga ko'chirish
       const oldK = rowKey(db, row);

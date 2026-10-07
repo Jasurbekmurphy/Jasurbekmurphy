@@ -661,3 +661,7 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 }
 @media (max-width: 959px) { .tabs { gap: 0; } .tab { font-size: 10px; padding: 6px 0; letter-spacing: -.15px; } }
 @media (max-width: 380px) { .tab { font-size: 9px; } }
+
+/* Yangi o'quvchi: avtomatik qiymatlar */
+.auto-note { background: var(--accent-soft); color: var(--text-2); padding: 8px 12px; border-radius: 10px; margin: 0; }
+.fld.auto input, .fld.auto textarea { background: color-mix(in srgb, var(--ok) 9%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
