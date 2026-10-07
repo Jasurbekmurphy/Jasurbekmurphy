@@ -686,3 +686,18 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .p-fold[open] > summary { margin-bottom: 8px; }
 .p-fold .p-list { max-height: 50vh; overflow: auto; padding-right: 4px; }
 .rp-list { max-height: 45vh; overflow: auto; }
+
+/* Davomat: guruhlar kesimida */
+.att-view { margin: 4px 0 12px; }
+.att-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 10px; align-items: start; }
+.ag-box { padding: 0; margin: 0; overflow: hidden; }
+.ag-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; width: 100%; padding: 12px 14px; border: 0; border-radius: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; min-height: 0; }
+.ag-name { display: flex; flex-direction: column; min-width: 0; }
+.ag-nums { display: flex; gap: 10px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ag-nums .ok { color: var(--ok); } .ag-nums .bad { color: var(--bad); } .ag-nums .none { color: var(--muted); }
+.ag-pc { font-size: 15px; min-width: 40px; text-align: right; }
+.ag-bar { grid-column: 1 / -1; height: 8px; }
+.ag-box .att-stu { padding: 0 14px 12px; }
+.ag-box .att-stu { grid-template-columns: minmax(0, 1fr); }
+.ag-box .as-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 6px; align-items: start; }
+.ag-box .as-row > .small { grid-column: 2; font-size: 12px; }

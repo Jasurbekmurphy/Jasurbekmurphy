@@ -4,7 +4,7 @@
 
 const attUi = {
   sub: 'att', date: '', data: null, err: '', loading: false, at: 0, timer: null, status: null,
-  q: '', open: new Set(), aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
+  q: '', open: new Set(), gopen: new Set(), view: 'people', aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
 };
 const hashCache = new Map();
 const tkToday = () => new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -294,7 +294,7 @@ function attHtml() {
     <div class="att-bar">
       <label>Sana <input type="date" id="att-date" value="${esc(attUi.date)}" max="${tkToday()}"></label>
       <button id="att-refresh">⟳ Yangilash</button>
-      <input type="search" id="att-q" placeholder="Korxona yoki mas'ul…" value="${esc(attUi.q)}">
+      <input type="search" id="att-q" placeholder="${attUi.view === 'groups' ? "Guruh, o'quvchi yoki korxona…" : "Korxona yoki mas'ul…"}" value="${esc(attUi.q)}">
       <button id="att-xl">⬇ Kunlik Excel</button>
       <button id="att-month">📅 Oylik jadval (Excel)</button>
     </div>
@@ -308,10 +308,54 @@ function attHtml() {
     </div>
     ${m.offToday ? `<p class="small muted">💤 ${m.offToday} ta korxonada bu kuni o'quvchi yo'q (3+3 jadval bo'yicha texnikumda).</p>` : ''}
     ${m.free ? `<p class="small warn">⚠ ${m.free} ta korxonaga mas'ul biriktirilmagan — <button class="link" data-sub2="people">biriktirish</button></p>` : ''}
-    ${blocks || '<p class="muted">Hech narsa topilmadi.</p>'}`;
+    <div class="seg att-view">
+      <button data-aview="people" class="${attUi.view !== 'groups' ? 'on' : ''}">👤 Mas'ullar bo'yicha</button>
+      <button data-aview="groups" class="${attUi.view === 'groups' ? 'on' : ''}">👥 Guruhlar bo'yicha</button>
+    </div>
+    ${attUi.view === 'groups' ? attGroupsHtml(m, q) : blocks || '<p class="muted">Hech narsa topilmadi.</p>'}`;
+}
+
+// Guruhlar kesimida: shu kuni korxonada bo'lishi kerak bo'lgan o'quvchilar — keldi / kelmadi / belgilanmagan
+function attGroupsHtml(m, q) {
+  const gmap = new Map();
+  for (const c of m.list) {
+    const it = m.items.get(c.key);
+    const owner = m.people.get(ownerOn(c.key, weekdayOf(attUi.date || tkToday())));
+    for (const r of c.rows) {
+      const g = m.gi >= 0 ? groupKey(r[m.gi]) || '—' : '—';
+      if (!gmap.has(g)) gmap.set(g, { g, rows: [] });
+      const v = it ? it.marks[hashCache.get(studentKey(r))] : undefined;
+      gmap.get(g).rows.push({ r, c, v, owner, went: !!it });
+    }
+  }
+  let groups = [...gmap.values()].sort((a, b) => a.g.localeCompare(b.g, 'uz', { numeric: true }));
+  if (q) groups = groups.filter((x) => Match.norm(x.g).includes(q) || x.rows.some(({ r, c }) => Match.norm(r[m.nameIdx]).includes(q) || Match.norm(c.name).includes(q)));
+  if (!groups.length) return '<p class="muted">Hech narsa topilmadi.</p>';
+  const ord = (v) => (v === 0 ? 0 : v === undefined ? 1 : 2);
+  return `<div class="att-groups">${groups.map((x) => {
+    const n = x.rows.length;
+    const yes = x.rows.filter((e) => e.v === 1).length, no = x.rows.filter((e) => e.v === 0).length, none = n - yes - no;
+    const pc = (k) => (n ? (k / n) * 100 : 0);
+    const open = attUi.gopen.has(x.g);
+    const rows = x.rows.slice().sort((a, b) => ord(a.v) - ord(b.v) || String(a.r[m.nameIdx] ?? '').localeCompare(String(b.r[m.nameIdx] ?? ''), 'uz'));
+    return `<div class="box ag-box">
+      <button class="ag-head" data-gopen="${esc(x.g)}">
+        <span class="ag-name"><b>${esc(x.g)}${/guruh|гурух/i.test(x.g) ? '' : '-guruh'}</b><span class="muted small">${n} o'quvchi · ${new Set(x.rows.map((e) => e.c.key)).size} ta joy</span></span>
+        <span class="ag-nums"><span class="ok">✅ ${yes}</span><span class="bad">❌ ${no}</span><span class="none">⬜ ${none}</span><b class="ag-pc">${n ? Math.round(pc(yes)) : 0}%</b></span>
+        <span class="da-stack ag-bar"><i class="ok" style="width:${pc(yes)}%"></i><i class="bad" style="width:${pc(no)}%"></i></span>
+      </button>
+      ${open ? `<div class="att-stu">${rows.map((e) => `<div class="as-row"><span>${e.v === 1 ? '✅' : e.v === 0 ? '❌' : '⬜'}</span><span class="grow">${esc(e.r[m.nameIdx] ?? '')}</span><span class="muted small">${esc(e.c.name)}${e.owner ? ' · ' + esc(e.owner.name) : " · mas'ul yo'q"}${e.went ? '' : ' · belgilanmagan'}</span></div>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function bindAtt(box) {
+  box.querySelectorAll('[data-aview]').forEach((b) => (b.onclick = () => { attUi.view = b.dataset.aview; renderAttendance(); }));
+  box.querySelectorAll('[data-gopen]').forEach((b) => (b.onclick = () => {
+    const g = b.dataset.gopen;
+    if (attUi.gopen.has(g)) attUi.gopen.delete(g); else attUi.gopen.add(g);
+    renderAttendance();
+  }));
   box.querySelectorAll('[data-sub2]').forEach((b) => (b.onclick = async () => { attUi.sub = b.dataset.sub2; await loadStatus(); renderAttendance(); }));
   if (!botReady()) return;
   // xeshlar tayyor bo'lmasa — hisoblab, qayta chizish
