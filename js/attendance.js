@@ -1,4 +1,4 @@
-/* global companyKey, studentCategory, state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
+/* global dbChanged, companyKey, studentCategory, state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
 'use strict';
 // Mas'ul shaxslar va Telegram bot orqali davomat.
 
@@ -1105,7 +1105,8 @@ function realHtml() {
     <div class="box rp-box">
       <h3>📍 Haqiqiy ish joylari — faqat davomat uchun (${rowsWith.length})</h3>
       <p class="small muted">Hujjatda o'quvchi pechati bor korxonaga biriktirilgan, lekin aslida boshqa joyda (masalan do'konda) ishlasa — shu yerda haqiqiy joyini yozing.
-        Davomat (bot) uni haqiqiy joyi bo'yicha oladi va o'sha joyga alohida mas'ul biriktirasiz. Korxonalar bo'limi, korxonalar soni va hujjatlar rasmiy korxona bo'yicha qoladi.</p>
+        Davomat (bot) uni haqiqiy joyi bo'yicha oladi va o'sha joyga alohida mas'ul biriktirasiz. Korxonalar bo'limi, korxonalar soni va hujjatlar rasmiy korxona bo'yicha qoladi.
+        Excel'da "Biriktirilgan korxona (pechatli)" ustunini o'zgartirib yuklasangiz — rasmiy korxona bazada ham o'zgaradi.</p>
       <div class="p-xl">
         <button id="rp-xl" type="button">⬇ Excel (hamma o'quvchilar)</button>
         <label class="file-btn">📤 Excel'dan yuklash<input type="file" id="rp-file" accept=".xlsx,.xlsm,.xls"></label>
@@ -1168,12 +1169,17 @@ async function importReal(file) {
   const raws = state.db.rows;
   const ji = state.db.fields.findIndex((f) => Match.canon(f.name).includes('jshshir'));
   const ni = state.db.nameIdx >= 0 ? state.db.nameIdx : 0;
-  const byJ = new Map();
-  if (ji >= 0) raws.forEach((r) => { const d = Match.digits(r[ji]); if (d.length === 14) byJ.set(d, r); });
+  const byJ = new Map(); // JShShIR → qatorlar (bazada takroriy bo'lishi mumkin)
+  if (ji >= 0) raws.forEach((r) => { const d = Match.digits(r[ji]); if (d.length === 14) { if (!byJ.has(d)) byJ.set(d, []); byJ.get(d).push(r); } });
+  const gIdx = dbFieldIdx('gurux', 'guruh');
   const toks = raws.map((r) => Match.personTokens(r[ni]));
-  const findRow = (j, name) => {
+  const findRow = (j, name, grp) => {
     const d = Match.digits(j);
-    if (d.length === 14 && byJ.has(d)) return byJ.get(d);
+    if (d.length === 14 && byJ.has(d)) {
+      let c = byJ.get(d);
+      if (c.length > 1 && grp != null && gIdx >= 0) { const f = c.filter((r) => String(r[gIdx] ?? '').trim() === String(grp).trim()); if (f.length) c = f; }
+      return c[0];
+    }
     const t = Match.personTokens(name);
     if (t.length < 2) return null;
     let best = -1, bs = 0, second = 0;
@@ -1181,7 +1187,8 @@ async function importReal(file) {
     return best >= 0 && bs >= 0.88 && bs - second >= 0.04 ? raws[best] : null;
   };
   const cur = state.resp.real || {};
-  const changes = new Map(), missing = [];
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
+  const changes = new Map(), missing = [], offChanges = new Map(); // offChanges: qator indeksi → yangi rasmiy korxona
   let seen = false;
   for (const name of wb.names) {
     const sh = wb.sheets[name];
@@ -1189,6 +1196,8 @@ async function importReal(file) {
       name: (c) => c.includes('fish') || c.includes('familiya'),
       j: (c) => c.includes('jshshir'),
       real: (c) => c.includes('haqiqiy') || c.includes('xaqiqiy') || c.includes('haqiqiyjoy'),
+      off: (c) => c.includes('korxona') && !c.includes('haqiqiy') && !c.includes('masul'),
+      g: (c) => c === 'guruh' || c === 'gurux' || c.startsWith('guruh') || c.startsWith('gurux'),
     });
     if (!h || h.cols.real < 0) continue;
     seen = true;
@@ -1198,30 +1207,41 @@ async function importReal(file) {
       const j = h.cols.j >= 0 ? g[h.cols.j] : '';
       if (!nm && !Match.digits(j)) continue;
       const v = String(g[h.cols.real] ?? '').replace(/\s+/g, ' ').trim();
-      const row = findRow(j, nm);
+      const row = findRow(j, nm, h.cols.g >= 0 ? g[h.cols.g] : null);
       if (!row) { if (v) missing.push(nm || String(j)); continue; }
       const k = studentKey(row);
       if ((cur[k] || '') !== v) changes.set(k, v); // bo'sh katak — haqiqiy joy olib tashlanadi
+      // Rasmiy (pechatli) korxona o'zgartirilgan bo'lsa — bazaga yoziladi (bo'sh katak bazadagini o'chirmaydi)
+      if (cfi >= 0 && h.cols.off >= 0) {
+        const nv = String(g[h.cols.off] ?? '').replace(/\s+/g, ' ').trim();
+        if (nv && companyKey(nv) !== companyKey(row[cfi])) offChanges.set(raws.indexOf(row), nv);
+      }
     }
   }
   if (!seen) { toast('Faylda "Haqiqiy joyi" ustuni topilmadi', 'err'); return; }
+  if (!changes.size && !offChanges.size) { toast("Faylda o'zgarish topilmadi", 'ok'); return; }
   const set = [...changes.values()].filter(Boolean).length, del = changes.size - set;
+  const offList = [...offChanges].map(([i, nv]) => ({ i, name: raws[i][ni], from: raws[i][cfi], to: nv }));
   const dlg = dialog(`
     <form method="dialog" class="dlg-form">
       <div class="dlg-head"><h3>📍 Haqiqiy joylarni yuklash</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
       <div class="dlg-body" style="grid-template-columns:1fr">
-        <p><b>${set}</b> ta o'quvchiga haqiqiy joy yoziladi${del ? `, <b>${del}</b> tasidan olib tashlanadi (katak bo'sh)` : ''}.</p>
+        <p>📍 <b>${set}</b> ta o'quvchiga haqiqiy joy yoziladi${del ? `, <b>${del}</b> tasidan olib tashlanadi (katak bo'sh)` : ''}.</p>
+        <p>🏢 <b>${offList.length}</b> ta o'quvchining rasmiy (pechatli) korxonasi bazada o'zgaradi${offList.length ? ' — Korxonalar bo\'limi va hujjatlarda yangi korxona chiqadi' : ''}.</p>
+        ${offList.length ? `<details ${offList.length <= 20 ? 'open' : ''}><summary>Rasmiy korxona o'zgarishlari (${offList.length})</summary><ul class="difflist">${offList.slice(0, 200).map((x) => `<li><b>${esc(x.name ?? '')}</b><div class="small"><s>${esc(x.from ?? '—')}</s> → ${esc(x.to)}</div></li>`).join('')}</ul></details>` : ''}
         ${missing.length ? `<details><summary class="warn">Bazada topilmadi (${missing.length})</summary><ul class="small">${missing.slice(0, 200).map((m) => `<li>${esc(m)}</li>`).join('')}</ul></details>` : ''}
         <p class="small muted">Yangi joylarga "Korxonalarga biriktirish" ro'yxatida mas'ul tanlashni unutmang.</p>
       </div>
-      <div class="dlg-foot"><button type="button" data-close>Bekor qilish</button><button type="button" class="primary" id="rp-go" ${changes.size ? '' : 'disabled'}>Yuklash</button></div>
+      <div class="dlg-foot"><button type="button" data-close>Bekor qilish</button><button type="button" class="primary" id="rp-go" ${changes.size || offList.length ? '' : 'disabled'}>Yuklash</button></div>
     </form>`);
   dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
   dlg.querySelector('#rp-go').onclick = async () => {
     for (const [k, v] of changes) await setRealPlace(k, v);
+    for (const x of offList) state.db.rows[x.i][cfi] = x.to;
     dlg.close();
+    if (offList.length) await dbChanged(); // bazani saqlash, bulutga yuborish, bo'limlarni yangilash
     await respChanged();
     renderAttendance();
-    toast(`Haqiqiy joylar yangilandi ✓ (${changes.size})`, 'ok');
+    toast(`Yangilandi ✓ — haqiqiy joy: ${changes.size}, rasmiy korxona: ${offList.length}`, 'ok');
   };
 }
