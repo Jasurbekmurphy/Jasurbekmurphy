@@ -423,7 +423,7 @@ details.sect[open] > summary::before { content: '▾ '; }
 
 /* ============================================================ Korxonalar */
 #comp-q { margin-top: 4px; }
-.comp-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 10px; align-items: start; }
+.comp-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .comp { border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 12px; padding: 0; margin: 0; background: var(--surface); }
 .comp[open] { grid-column: 1 / -1; }
 .comp.has { border-left-color: var(--ok); }
@@ -567,7 +567,7 @@ html, body { overflow-x: clip; }
 .file-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 9px 14px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-weight: 600; cursor: pointer; background: var(--surface); font-size: 15px; }
 .file-btn:hover { background: var(--accent-soft); }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.docs { display: flex; flex-direction: column; gap: 4px; align-items: stretch; flex: none; } .docs .ct { min-height: 30px; font-size: 12px; padding: 3px 10px; }
+.docs { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; align-items: center; flex: none; } .docs .ct { min-height: 30px; font-size: 12px; padding: 3px 10px; }
 .spell-box { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .sp-ul { max-height: 240px; overflow: auto; margin: 6px 0 0; }
 .sp-group { border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; margin: 8px 0; }
@@ -666,3 +666,14 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .auto-note { background: var(--accent-soft); color: var(--text-2); padding: 8px 12px; border-radius: 10px; margin: 0; }
 .fld.auto input, .fld.auto textarea { background: color-mix(in srgb, var(--ok) 9%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .a-row.pseudo { background: var(--accent-soft); }
+
+/* Haqiqiy ish joylari */
+.rp-box { margin-top: 16px; }
+.rp-box #rp-q { width: 100%; margin: 10px 0; }
+.rp-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.rp-found { padding: 8px; border: 1px dashed var(--border); border-radius: 10px; }
+.rp-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.rp-name { display: flex; flex-direction: column; min-width: 0; } .rp-name b { word-break: break-word; }
+.rp-row input { min-width: 0; width: 100%; }
+@media (max-width: 600px) { .rp-row { grid-template-columns: minmax(0, 1fr) auto; } .rp-row .rp-name { grid-column: 1 / -1; } }
+.rp-h { margin: 6px 0; font-size: 14px; }

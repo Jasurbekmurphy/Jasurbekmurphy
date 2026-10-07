@@ -1373,7 +1373,7 @@ function syncBase(p) {
   return JSON.parse(JSON.stringify({
     db: dbSig(p.db), tpl: byKey(p.templates, 'name'),
     comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {},
-    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, band: p.band || {}, bot: p.bot || null,
+    people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, real: (p.resp && p.resp.real) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, band: p.band || {}, bot: p.bot || null,
   }));
 }
 
@@ -1408,7 +1408,7 @@ function mergePayload(base, L, R, prefer) {
     templates: Object.values(mergeMap(b.tpl, l.tpl, r.tpl, prefer)),
     marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer) },
     band: mergeMap(b.band, l.band, r.band, prefer),
-    resp: { ...(R.resp || {}), people: Object.values(people), assign, assignBy, sched: mergeMap(b.sched, l.sched, r.sched, prefer) },
+    resp: { ...(R.resp || {}), people: Object.values(people), assign, assignBy, sched: mergeMap(b.sched, l.sched, r.sched, prefer), real: mergeMap(b.real, l.real, r.real, prefer) },
   };
 }
 

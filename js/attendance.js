@@ -1,4 +1,4 @@
-/* global studentCategory, state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
+/* global companyKey, studentCategory, state, $, esc, toast, Match, saveLocal, cloudPush, companyGroups, studentContract, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, companyKey, dialog, refreshDashAtt */
 'use strict';
 // Mas'ul shaxslar va Telegram bot orqali davomat.
 
@@ -65,17 +65,38 @@ const ownersOf = (ck) => [...new Set([state.resp.assign[ck], ...Object.values(sp
 
 // Davomat uchun korxonalar: ta'lim muassasasi va shartnoma talab qilinmaydiganlar chiqariladi
 const PSEUDO = { inst: { key: '__inst', name: "Ta'lim muassasasi (3-toifa)" }, cat4: { key: '__cat4', name: 'Biriktirilmaganlar (4-toifa)' } };
+// O'quvchining haqiqiy ish joyi (faqat davomat uchun). Rasmiy (pechatli) korxona bazada qoladi.
+const realPlaceOf = (r) => ((state.resp.real || {})[studentKey(r)] || '').trim();
+
+// Davomat uchun "korxonalar": o'quvchi haqiqiy joyi bo'yicha (bo'lmasa — rasmiy korxonasi bo'yicha)
 function attCompanies() {
   const data = companyGroups();
   if (!data) return { list: [], gi: -1 };
-  const list = data.list.filter((c) => !c.inst).map((c) => ({ ...c, rows: c.rows.filter((r) => !studentContract(r).na) })).filter((c) => c.rows.length);
-  // Korxonaga bormaydigan o'quvchilar ham davomat uchun alohida "korxona" bo'ladi: davomat texnikumda olinadi
-  const extra = [];
-  for (const cat of ['inst', 'cat4']) {
-    const rows = state.view.rows.filter((r) => studentCategory(r) === cat);
-    if (rows.length) extra.push({ ...PSEUDO[cat], pseudo: cat, rows, groups: [] });
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
+  const official = new Map(data.list.map((c) => [c.key, c]));
+  const byKey = new Map();
+  const add = (key, name, r, extra) => {
+    if (!byKey.has(key)) byKey.set(key, { key, name, rows: [], groups: [], ...extra });
+    byKey.get(key).rows.push(r);
+  };
+  for (const r of state.view.rows) {
+    const rp = realPlaceOf(r);
+    if (rp) {
+      const k = companyKey(rp);
+      const off = official.get(k);
+      add(k, off ? off.name : rp, r, off ? {} : { real: true });
+      continue;
+    }
+    const cat = studentCategory(r);
+    if (cat === 'inst' || cat === 'cat4') { add(PSEUDO[cat].key, PSEUDO[cat].name, r, { pseudo: cat }); continue; }
+    const k = cfi >= 0 ? companyKey(r[cfi]) : '';
+    if (!k) continue;
+    const off = official.get(k);
+    add(k, off ? off.name : String(r[cfi]).trim(), r, {});
   }
-  return { gi: data.gi, list: [...extra, ...list] };
+  // Korxonaga bormaydigan o'quvchilar (ta'lim muassasasi, 4-toifa) tepada, keyin o'quvchilar soni bo'yicha
+  const list = [...byKey.values()].sort((a, b) => (b.pseudo ? 1 : 0) - (a.pseudo ? 1 : 0) || (a.pseudo === 'inst' ? -1 : b.pseudo === 'inst' ? 1 : 0) || b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
+  return { gi: data.gi, list };
 }
 
 async function buildRoster() {
@@ -391,7 +412,7 @@ function peopleHtml() {
             const both = hv['123'].size && hv['456'].size;
             const gtxt = c.pseudo ? [...new Set(c.rows.map((r) => groupKey(r[gi])).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz', { numeric: true })).join(', ') + " · texnikumda, har kuni" : [['', ''], ['123', 'Du–Chor: '], ['456', 'Pay–Shan: ']].filter(([k]) => hv[k].size).map(([k, l]) => l + [...hv[k]].join(', ')).join(' · ');
             return `<div class="a-row ${c.pseudo ? 'pseudo' : ''} ${ownersOf(c.key).length ? 'on' : ''} ${open ? 'split' : ''}">
-            <div class="a-name"><b>${c.pseudo === 'inst' ? '🎓 ' : c.pseudo === 'cat4' ? '🚫 ' : ''}${esc(c.name)}</b><span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
+            <div class="a-name"><b>${c.pseudo === 'inst' ? '🎓 ' : c.pseudo === 'cat4' ? '🚫 ' : c.real ? '📍 ' : ''}${esc(c.name)}</b>${c.real ? ' <span class="badge">haqiqiy joy</span>' : ''}<span class="muted small">${c.rows.length} o'quvchi${gtxt ? ' · ' + esc(gtxt) : ''}</span></div>
             <div class="a-sel">
               ${open ? `<span class="a-split-note small muted">Kunlar bo'yicha</span>` : `<select data-assign="${esc(c.key)}">${opts(state.resp.assign[c.key] || '')}</select>`}
               <button type="button" class="a-split-btn ${open ? 'on' : ''} ${both && !by ? 'hint' : ''}" data-split="${esc(c.key)}" title="${open ? "Bitta mas'ulga qaytarish" : "Kunlar bo'yicha har xil mas'ul"}">📅⇄</button>
@@ -404,10 +425,12 @@ function peopleHtml() {
         </div>
         <p class="fl-note">${botReady() ? (attUi.pushedAt ? `Oxirgi yuborilgan: ${new Date(attUi.pushedAt).toLocaleTimeString('uz')}. ` : '') + "O'zgarishlar bir necha soniyadan keyin botga avtomatik yuboriladi." : 'Bot ulanmagan — "⚙️ Bot" bo\'limida sozlang.'}</p>
       </div>
-    </div>`;
+    </div>
+    ${realHtml()}`;
 }
 
 function bindPeople(box) {
+  bindReal(box);
   $('#p-tpl').onclick = downloadPeopleTemplate;
   $('#p-xlfile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importPeopleFile(f); };
   $('#p-add').onsubmit = async (e) => {
@@ -857,6 +880,8 @@ async function downloadMonth(ym, split, onlyPid) {
   const nameIdx = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
   const ci = dbFieldIdx('bosqich', 'kurs');
   const ii = dbFieldIdx('talimmuassasasinomi');
+  const cfiR = dbFieldIdx('korxonanomi', 'korxona');
+  const isEmptyCell = (v) => v == null || String(v).trim() === '';
   const inst = (ii >= 0 && state.db.rows.map((r) => String(r[ii] ?? '').trim()).find(Boolean)) || 'Техникум';
   const instName = inst.replace(/поли(техникум)/gi, '$1').replace(/poli(texnikum)/gi, '$1');
   const people = new Map(state.resp.people.map((p) => [p.id, p]));
@@ -886,7 +911,9 @@ async function downloadMonth(ym, split, onlyPid) {
       const dys = rowDays(r, gi, x.c);
       const ws = dys ? [+dys[0]] : [1, 4];
       const masul = [...new Set(ws.map((w) => people.get(ownerOn(x.c.key, w))?.name).filter(Boolean))].join(' / ');
-      return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', x.c.name], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul };
+      // Hujjatda rasmiy (pechatli) korxona yoziladi; haqiqiy joy faqat davomat uchun
+      const offName = cfiR >= 0 && !isEmptyCell(r[cfiR]) ? String(r[cfiR]).trim() : x.c.name;
+      return { cells: [String(r[nameIdx] ?? ''), kurs == null ? '' : kurs, gi >= 0 ? r[gi] ?? '' : '', offName], marks, off, total: yes || no ? `${yes} / ${no}` : '', masul };
     });
   };
 
@@ -996,4 +1023,154 @@ function openAutoSplit() {
     };
   };
   draw();
+}
+
+// ---------------------------------------------------------------- 📍 Haqiqiy joylar (faqat davomat uchun)
+// Hujjatda o'quvchi pechatli korxonaga biriktirilgan bo'ladi, lekin aslida boshqa joyda (masalan do'konda) ishlaydi.
+// Haqiqiy joy yozilsa: davomat o'sha joy bo'yicha olinadi; Korxonalar bo'limi va hujjatlar rasmiy korxonada qoladi.
+function realKnownPlaces() {
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
+  const set = new Set(Object.values(state.resp.real || {}));
+  if (cfi >= 0) for (const r of state.db.rows) if (r[cfi] != null && String(r[cfi]).trim()) set.add(String(r[cfi]).trim());
+  return [...set].sort((a, b) => a.localeCompare(b, 'uz'));
+}
+
+function realHtml() {
+  const real = state.resp.real || {};
+  const ni = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
+  const gi = dbFieldIdx('gurux', 'guruh'), cfi = dbFieldIdx('korxonanomi', 'korxona');
+  const q = Match.norm(attUi.rq || '');
+  const rowsWith = state.view.rows.filter((r) => real[studentKey(r)]);
+  const found = q.length >= 2 ? state.view.rows.filter((r) => Match.norm(r[ni]).includes(q)).slice(0, 15) : [];
+  const line = (r) => {
+    const k = studentKey(r);
+    return `<div class="rp-row">
+      <div class="rp-name"><b>${esc(r[ni] ?? '')}</b><span class="muted small">${gi >= 0 ? esc(r[gi] ?? '') + '-guruh · ' : ''}🏢 rasmiy: ${esc(cfi >= 0 ? r[cfi] ?? '—' : '—')}</span></div>
+      <input list="rp-places" data-rp="${esc(k)}" value="${esc(real[k] || '')}" placeholder="📍 Haqiqiy joyi (do'kon, MFY…)">
+      ${real[k] ? `<button type="button" class="icon-btn" data-rpdel="${esc(k)}" title="Olib tashlash">✕</button>` : ''}
+    </div>`;
+  };
+  return `
+    <div class="box rp-box">
+      <h3>📍 Haqiqiy ish joylari — faqat davomat uchun (${rowsWith.length})</h3>
+      <p class="small muted">Hujjatda o'quvchi pechati bor korxonaga biriktirilgan, lekin aslida boshqa joyda (masalan do'konda) ishlasa — shu yerda haqiqiy joyini yozing.
+        Davomat (bot) uni haqiqiy joyi bo'yicha oladi va o'sha joyga alohida mas'ul biriktirasiz. Korxonalar bo'limi, korxonalar soni va hujjatlar rasmiy korxona bo'yicha qoladi.</p>
+      <div class="p-xl">
+        <button id="rp-xl" type="button">⬇ Excel (hamma o'quvchilar)</button>
+        <label class="file-btn">📤 Excel'dan yuklash<input type="file" id="rp-file" accept=".xlsx,.xlsm,.xls"></label>
+      </div>
+      <input type="search" id="rp-q" placeholder="O'quvchini qidirish (F.I.Sh)…" value="${esc(attUi.rq || '')}">
+      ${found.length ? `<div class="rp-list rp-found">${found.map(line).join('')}</div>` : q.length >= 2 ? '<p class="small muted">Topilmadi.</p>' : ''}
+      ${rowsWith.length ? `<h4 class="rp-h">Haqiqiy joyi yozilganlar</h4><div class="rp-list">${rowsWith.map(line).join('')}</div>` : '<p class="small muted">Hozircha hamma o\'quvchi rasmiy korxonasida davomat qilinadi.</p>'}
+      <datalist id="rp-places">${realKnownPlaces().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
+    </div>`;
+}
+
+async function setRealPlace(key, place) {
+  state.resp.real = { ...(state.resp.real || {}) };
+  const v = String(place || '').replace(/\s+/g, ' ').trim();
+  if (v) state.resp.real[key] = v; else delete state.resp.real[key];
+}
+
+function bindReal(box) {
+  const q = $('#rp-q');
+  if (!q) return;
+  q.oninput = () => { const pos = q.selectionStart; attUi.rq = q.value; renderAttendance(); const n = $('#rp-q'); n.focus(); n.setSelectionRange(pos, pos); };
+  box.querySelectorAll('[data-rp]').forEach((el) => (el.onchange = async () => {
+    await setRealPlace(el.dataset.rp, el.value);
+    await respChanged();
+    renderAttendance();
+  }));
+  box.querySelectorAll('[data-rpdel]').forEach((b) => (b.onclick = async () => {
+    await setRealPlace(b.dataset.rpdel, '');
+    await respChanged();
+    renderAttendance();
+  }));
+  $('#rp-xl').onclick = downloadReal;
+  $('#rp-file').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importReal(f); };
+}
+
+async function downloadReal() {
+  const real = state.resp.real || {};
+  const ni = state.view.nameIdx >= 0 ? state.view.nameIdx : 0;
+  const gi = dbFieldIdx('gurux', 'guruh'), ci = dbFieldIdx('bosqich', 'kurs'), cfi = dbFieldIdx('korxonanomi', 'korxona');
+  const ji = state.db.fields.findIndex((f) => Match.canon(f.name).includes('jshshir'));
+  const people = new Map(state.resp.people.map((p) => [p.id, p.name]));
+  const att = new Map();
+  for (const c of attCompanies().list) for (const r of c.rows) att.set(studentKey(r), c);
+  const rows = state.view.rows.map((r, i) => {
+    const k = studentKey(r), c = att.get(k);
+    const own = c ? [...new Set([1, 4].map((w) => people.get(ownerOn(c.key, w))).filter(Boolean))].join(' / ') : '';
+    return [i + 1, r[ni] ?? '', ji >= 0 ? String(state.db.rows[i][ji] ?? '') : '', ci >= 0 ? r[ci] ?? '' : '', gi >= 0 ? r[gi] ?? '' : '', cfi >= 0 ? r[cfi] ?? '' : '', real[k] || '', own];
+  });
+  const blob = await XlsxWrite.buildWorkbook({
+    title: "O'quvchilar: rasmiy korxona va haqiqiy ish joyi", sheetName: 'Haqiqiy joylar',
+    headers: ['№', 'F.I.Sh', 'JShShIR', 'Kurs', 'Guruh', 'Biriktirilgan korxona (pechatli, rasmiy)', 'Haqiqiy joyi (davomat uchun)', "Davomat mas'uli"],
+    rows, minWidths: [5, 34, 16, 6, 8, 34, 34, 24],
+  });
+  downloadBlob(blob, 'Haqiqiy joylar.xlsx');
+}
+
+async function importReal(file) {
+  let wb;
+  try { wb = readWorkbook(await readFile(file)); } catch (e) { toast("Faylni o'qib bo'lmadi: " + e.message, 'err'); return; }
+  const raws = state.db.rows;
+  const ji = state.db.fields.findIndex((f) => Match.canon(f.name).includes('jshshir'));
+  const ni = state.db.nameIdx >= 0 ? state.db.nameIdx : 0;
+  const byJ = new Map();
+  if (ji >= 0) raws.forEach((r) => { const d = Match.digits(r[ji]); if (d.length === 14) byJ.set(d, r); });
+  const toks = raws.map((r) => Match.personTokens(r[ni]));
+  const findRow = (j, name) => {
+    const d = Match.digits(j);
+    if (d.length === 14 && byJ.has(d)) return byJ.get(d);
+    const t = Match.personTokens(name);
+    if (t.length < 2) return null;
+    let best = -1, bs = 0, second = 0;
+    toks.forEach((tk, i) => { const sc = Match.personScore(t, tk); if (sc > bs) { second = bs; bs = sc; best = i; } else if (sc > second) second = sc; });
+    return best >= 0 && bs >= 0.88 && bs - second >= 0.04 ? raws[best] : null;
+  };
+  const cur = state.resp.real || {};
+  const changes = new Map(), missing = [];
+  let seen = false;
+  for (const name of wb.names) {
+    const sh = wb.sheets[name];
+    const h = findHeader(sh, {
+      name: (c) => c.includes('fish') || c.includes('familiya'),
+      j: (c) => c.includes('jshshir'),
+      real: (c) => c.includes('haqiqiy') || c.includes('xaqiqiy') || c.includes('haqiqiyjoy'),
+    });
+    if (!h || h.cols.real < 0) continue;
+    seen = true;
+    for (let r = h.row + 1; r < sh.rows; r++) {
+      const g = sh.grid[r];
+      const nm = h.cols.name >= 0 ? String(g[h.cols.name] ?? '').trim() : '';
+      const j = h.cols.j >= 0 ? g[h.cols.j] : '';
+      if (!nm && !Match.digits(j)) continue;
+      const v = String(g[h.cols.real] ?? '').replace(/\s+/g, ' ').trim();
+      const row = findRow(j, nm);
+      if (!row) { if (v) missing.push(nm || String(j)); continue; }
+      const k = studentKey(row);
+      if ((cur[k] || '') !== v) changes.set(k, v); // bo'sh katak — haqiqiy joy olib tashlanadi
+    }
+  }
+  if (!seen) { toast('Faylda "Haqiqiy joyi" ustuni topilmadi', 'err'); return; }
+  const set = [...changes.values()].filter(Boolean).length, del = changes.size - set;
+  const dlg = dialog(`
+    <form method="dialog" class="dlg-form">
+      <div class="dlg-head"><h3>📍 Haqiqiy joylarni yuklash</h3><button type="button" class="icon-btn" data-close aria-label="Yopish">✕</button></div>
+      <div class="dlg-body" style="grid-template-columns:1fr">
+        <p><b>${set}</b> ta o'quvchiga haqiqiy joy yoziladi${del ? `, <b>${del}</b> tasidan olib tashlanadi (katak bo'sh)` : ''}.</p>
+        ${missing.length ? `<details><summary class="warn">Bazada topilmadi (${missing.length})</summary><ul class="small">${missing.slice(0, 200).map((m) => `<li>${esc(m)}</li>`).join('')}</ul></details>` : ''}
+        <p class="small muted">Yangi joylarga "Korxonalarga biriktirish" ro'yxatida mas'ul tanlashni unutmang.</p>
+      </div>
+      <div class="dlg-foot"><button type="button" data-close>Bekor qilish</button><button type="button" class="primary" id="rp-go" ${changes.size ? '' : 'disabled'}>Yuklash</button></div>
+    </form>`);
+  dlg.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => dlg.close()));
+  dlg.querySelector('#rp-go').onclick = async () => {
+    for (const [k, v] of changes) await setRealPlace(k, v);
+    dlg.close();
+    await respChanged();
+    renderAttendance();
+    toast(`Haqiqiy joylar yangilandi ✓ (${changes.size})`, 'ok');
+  };
 }
