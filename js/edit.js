@@ -298,7 +298,7 @@ function renderEdit() {
         <button id="ed-ftoggle" class="${editUi.filterOpen || nActive ? 'on-soft' : ''}">⚲ Filtr${nActive ? ` <span class="nbadge">${nActive}</span>` : ''}</button>
         <div class="col-pick">
           <button id="ed-cols">Ustunlar (${cols.length}) ▾</button>
-          ${editUi.colsOpen ? `<div class="col-pick-menu">${db.fields.map((f, i) => `<label><input type="checkbox" data-col="${i}" ${cols.includes(i) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}</div>` : ''}
+          ${editUi.colsOpen ? `<div class="col-pick-menu"><div class="col-pick-close"><button type="button" id="ed-cols-close">✓ Tayyor</button></div>${db.fields.map((f, i) => `<label><input type="checkbox" data-col="${i}" ${cols.includes(i) ? 'checked' : ''}> ${esc(f.label)}</label>`).join('')}</div>` : ''}
         </div>
         <button class="primary" id="ed-add">＋ Yangi o'quvchi</button>
       </div>
@@ -329,6 +329,8 @@ function renderEdit() {
   $('#ed-q').oninput = (e) => { editUi.q = e.target.value; editUi.page = 0; renderEditGrid(); };
   $('#ed-ftoggle').onclick = () => { editUi.filterOpen = !editUi.filterOpen; renderEdit(); };
   $('#ed-cols').onclick = () => { editUi.colsOpen = !editUi.colsOpen; renderEdit(); };
+  const cc = $('#ed-cols-close');
+  if (cc) cc.onclick = () => { editUi.colsOpen = false; renderEdit(); };
   box.querySelectorAll('[data-col]').forEach((cb) => (cb.onchange = () => {
     const c = +cb.dataset.col;
     editUi.cols = cb.checked ? [...editUi.cols, c].sort((a, b) => a - b) : editUi.cols.filter((x) => x !== c);

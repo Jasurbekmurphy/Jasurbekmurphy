@@ -701,3 +701,11 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .ag-box .att-stu { grid-template-columns: minmax(0, 1fr); }
 .ag-box .as-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 6px; align-items: start; }
 .ag-box .as-row > .small { grid-column: 2; font-size: 12px; }
+/* Telefonda ustunlar menyusi butun qator kengligida (ekrandan chiqmaydi) */
+@media (max-width: 700px) {
+  .ed-bar { position: relative; }
+  .col-pick { position: static; }
+  .col-pick-menu { left: 0; right: 0; width: auto; max-height: 60vh; }
+}
+.col-pick-close { position: sticky; top: -8px; display: flex; justify-content: flex-end; background: var(--surface); padding: 2px 0 6px; margin: -2px 0 2px; }
+.col-pick-close button { min-height: 32px; padding: 2px 12px; font-size: 13px; }
