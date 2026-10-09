@@ -16,6 +16,29 @@ function courseFilters() {
   return [f];
 }
 
+// O'quvchi jinsi: uch belgi bo'yicha ko'pchilik ovozi — ism qo'shimchasi (ўғли/қизи),
+// familiya oxiri (-ов/-ова) va JShShIR birinchi raqami (1,3,5 — erkak; 2,4,6 — ayol)
+function genderOf(r) {
+  const ni = state.db.nameIdx >= 0 ? state.db.nameIdx : 0;
+  const ji = state.db.fields.findIndex((f) => Match.canon(f.name).includes('jshshir'));
+  const name = String(r[ni] ?? '').toLowerCase().replace(/[‘’ʻʼ`´]/g, "'");
+  const sig = [];
+  if (/(ўғли|ўгли|угли|уғли|оғли|o'g'li|o'gli|og'li|ogli|ugli)/.test(name)) sig.push('m');
+  else if (/(қизи|кизи|кизы|qizi|kizi)/.test(name)) sig.push('f');
+  const fam = name.trim().split(/\s+/)[0] || '';
+  if (/(ова|ева|ёва|ова|ина|ова|ova|eva|yeva|ina)$/.test(fam)) sig.push('f');
+  else if (/(ов|ев|ёв|ин|ov|ev|yev|in)$/.test(fam)) sig.push('m');
+  // otasining ismi: -овна / -ович
+  if (/(овна|евна|ovna|evna)\b/.test(name)) sig.push('f');
+  else if (/(ович|евич|ovich|evich)\b/.test(name)) sig.push('m');
+  const d = ji >= 0 ? Match.digits(r[ji]) : '';
+  const jg = d.length === 14 ? ({ 1: 'm', 3: 'm', 5: 'm', 2: 'f', 4: 'f', 6: 'f' })[d[0]] : undefined;
+  if (jg) sig.push(jg);
+  const m = sig.filter((x) => x === 'm').length, f = sig.length - m;
+  return m > f ? 'm' : f > m ? 'f' : sig[0] || '';
+}
+const genderCount = (rows) => { let m = 0, f = 0; for (const r of rows) { const g = genderOf(r); if (g === 'm') m++; else if (g === 'f') f++; } return { m, f, u: rows.length - m - f }; };
+
 function countBy(rows, idx) {
   const m = new Map();
   for (const r of rows) {
@@ -133,10 +156,13 @@ function renderDashboard() {
   const bNaqd = bands.filter((x) => x.t === 'naqd').length;
   const bSums = bands.filter((x) => x.s).map((x) => x.s);
   const bAvg = bSums.length ? Math.round(bSums.reduce((a, b) => a + b, 0) / bSums.length) : 0;
+  const gen = genderCount(raw);
   const groupsN = gi >= 0 ? new Set(rows.map((r) => r[gi]).filter((v) => v != null)).size : 0;
 
   const kpis = [
     kpi({ id: 'total', label: "Jami o'quvchilar", icon: '👥', value: total, sub: groupsN ? `${groupsN} ta guruh` : '' }),
+    kpi({ id: 'gender', label: "O'g'il bolalar / qizlar", icon: '🧑‍🎓', value: `${gen.m} <small>/ ${gen.f}</small>`, pct: total ? (gen.m / total) * 100 : 0,
+      sub: `👦 o'g'il: ${gen.m} (${Math.round(pct(gen.m))}%) · 👧 qiz: ${gen.f} (${Math.round(pct(gen.f))}%)${gen.u ? ` · aniqlanmadi: ${gen.u}` : ''}` }),
     working != null && kpi({ id: 'work', label: 'Ishlaydiganlar (oylik oladi)', icon: '💼', value: working, of: total, pct: pct(working), sub: `${Math.round(pct(working))}% · bosib ro'yxatni oching` }),
     stays != null && kpi({ id: 'stay', label: 'Korxonada ishda qoladi', icon: '🏭', value: stays, of: total, pct: pct(stays), sub: `${Math.round(pct(stays))}%` }),
     comp && kpi({ id: 'comp', label: 'Korxonalar', icon: '🏢', value: compN, sub: `🤝 hamkorlik: ${compWith} · 📋 buyruq: ${orderWith}`, pct: compN ? (compWith / compN) * 100 : 0 }),
@@ -174,13 +200,14 @@ function renderDashboard() {
   const d = new Date(state.db.editedAt || state.db.importedAt);
   const courseCards = courses.map(([v, n]) => {
     const cr = state.db.rows.filter((r) => String(r[ci] ?? '').trim() === v);
+    const cg = genderCount(cr);
     const g = gi >= 0 ? new Set(cr.map((r) => r[gi]).filter((x) => x != null)).size : 0;
     const w = pay.length ? cr.filter(isWorking).length : null;
     const st = stay >= 0 ? cr.filter(isStay).length : null;
     return `<button class="course-card ${dashUi.course === v ? 'on' : ''}" data-course="${esc(v)}">
       <span class="cc-title">${esc(courseLabel(v))}</span>
       <span class="cc-num">${n} <small>o'quvchi</small></span>
-      <span class="cc-meta">${g ? `${g} ta guruh` : ''}${w != null ? ` · ishlaydi: ${w}` : ''}${st != null ? ` · qoladi: ${st}` : ''}</span>
+      <span class="cc-meta">👦 ${cg.m} · 👧 ${cg.f}${g ? ` · ${g} ta guruh` : ''}${w != null ? ` · ishlaydi: ${w}` : ''}${st != null ? ` · qoladi: ${st}` : ''}</span>
     </button>`;
   }).join('');
   box.innerHTML = `
@@ -247,6 +274,7 @@ function renderDashboard() {
     else if (id === 'cat4') openTableWith(vfield('stu'), '4-toifa');
     else if (id === 'stuc') openTableWith(vfield('stu'), '−');
     else if (id === 'issues') { editUi.mode = iss.bad.length ? 'bad' : iss.dups.length ? 'dup' : 'all'; renderEdit(); showTab('p-edit'); }
+    else if (id === 'gender') return;
     else showTab('p-table');
   }
 }
