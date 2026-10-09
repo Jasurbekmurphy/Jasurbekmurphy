@@ -13,6 +13,10 @@
     ['empty', "Bo'sh"],
   ];
 
+  // Qiymat kaliti: ortiqcha bo'shliq, qator ko'chishi (\r\n, \n) va chetdagi bo'shliqlar e'tiborga olinmaydi.
+  // Aks holda "2-тоифада\r\n(4+2…)" kabi kataklar tanlanganda hech narsa topilmay qolardi.
+  const vkey = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+
   // Taqqoslash uchun: raqam yoki sana (kk.oo.yyyy -> yyyymmdd)
   function comparable(v) {
     if (v == null || v === '') return null;
@@ -38,7 +42,7 @@
     const v = row[f.field];
     const empty = v == null || String(v).trim() === '';
     switch (f.op) {
-      case 'in': return f.values.includes(String(v ?? ''));
+      case 'in': { const k = vkey(v); return f.values.some((x) => vkey(x) === k); }
       case 'notempty': return !empty;
       case 'empty': return empty;
       case 'contains': {
@@ -90,7 +94,7 @@
   function describe(db, f) {
     const name = db.fields[f.field] ? db.fields[f.field].name : '';
     switch (f.op) {
-      case 'in': return `${name}: ${f.values.length <= 3 ? f.values.map((v) => v || "(bo'sh)").join(', ') : f.values.length + ' ta qiymat'}`;
+      case 'in': return `${name}: ${f.values.length <= 3 ? f.values.map((v) => vkey(v) || "(bo'sh)").join(', ') : f.values.length + ' ta qiymat'}`;
       case 'notempty': return `${name}: to'ldirilgan`;
       case 'empty': return `${name}: bo'sh`;
       case 'contains': return `${name}: «${f.text}»`;
@@ -117,8 +121,8 @@
     };
     const valueCounts = (field, fi, selected) => {
       const counts = new Map();
-      for (const r of baseRows(fi)) { const v = String(r[field] ?? ''); counts.set(v, (counts.get(v) || 0) + 1); }
-      for (const v of selected || []) if (!counts.has(v)) counts.set(v, 0); // tanlangani yo'qolmasin
+      for (const r of baseRows(fi)) { const v = vkey(r[field]); counts.set(v, (counts.get(v) || 0) + 1); }
+      for (const v of selected || []) if (!counts.has(vkey(v))) counts.set(vkey(v), 0); // tanlangani yo'qolmasin
       return [...counts].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true }));
     };
     const narrowed = (fi) => fi > 0 && filters[fi].join !== 'or' && filters.slice(0, fi).some(isActive);
@@ -138,7 +142,7 @@
             const vc = valueCounts(f.field, fi, f.values);
             body = `${narrowed(fi) ? `<p class="fl-note">Oldingi shart(lar)ga mos ${baseRows(fi).length} ta qator bo'yicha ko'rsatilmoqda.</p>` : ''}${vc.length > 8 ? `<input type="search" class="chip-search" placeholder="Qiymat qidirish…">` : ''}
               <div class="chips">${vc.map(([v, n]) =>
-              `<label class="chip ${f.values.includes(v) ? 'on' : ''}"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.includes(v) ? 'checked' : ''}><span class="cv">${esc(v || "(bo'sh)")}</span><span class="cn">${n}</span></label>`).join('')}</div>`;
+              `<label class="chip ${f.values.some((x) => vkey(x) === v) ? 'on' : ''}"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.some((x) => vkey(x) === v) ? 'checked' : ''}><span class="cv">${esc(v || "(bo'sh)")}</span><span class="cn">${n}</span></label>`).join('')}</div>`;
           } else if (f.op === 'contains') {
             body = `<input type="search" class="fl-input" data-fi="${fi}" data-k="text" value="${esc(f.text)}" placeholder="Qidiriladigan so'z, masalan: MChJ">`;
           } else if (f.op === 'range') {
@@ -186,7 +190,7 @@
     }));
     box.querySelectorAll('.chips input[type=checkbox]').forEach((cb) => (cb.onchange = () => {
       const f = filters[+cb.dataset.fi];
-      f.values = cb.checked ? [...f.values, cb.value] : f.values.filter((v) => v !== cb.value);
+      f.values = cb.checked ? [...f.values.filter((v) => vkey(v) !== cb.value), cb.value] : f.values.filter((v) => vkey(v) !== cb.value);
       // keyingi shartlar qiymatlari shunga qarab o'zgaradi
       if (+cb.dataset.fi < filters.length - 1) { rerender(); return; }
       cb.closest('.chip').classList.toggle('on', cb.checked);
