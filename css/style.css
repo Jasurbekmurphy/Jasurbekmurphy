@@ -709,3 +709,4 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 }
 .col-pick-close { position: sticky; top: -8px; display: flex; justify-content: flex-end; background: var(--surface); padding: 2px 0 6px; margin: -2px 0 2px; }
 .col-pick-close button { min-height: 32px; padding: 2px 12px; font-size: 13px; }
+.ct.part { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }

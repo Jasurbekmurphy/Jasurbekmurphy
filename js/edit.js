@@ -651,6 +651,12 @@ function openCompanyDialog() {
     for (const [from, to] of pick) {
       const a = companyKey(from), b = companyKey(to);
       if (a !== b && state.marks.comp[a] && !state.marks.comp[b]) { state.marks.comp[b] = { ...state.marks.comp[a], name: to }; delete state.marks.comp[a]; }
+      if (a !== b) for (const ck of Object.keys(state.marks.cg || {})) {
+        if (!ck.startsWith(a + '|')) continue;
+        const nk = b + ck.slice(a.length);
+        if (!state.marks.cg[nk]) state.marks.cg[nk] = state.marks.cg[ck];
+        delete state.marks.cg[ck];
+      }
     }
     dlg.close();
     await dbChanged(`${pick.size} ta nom tartiblandi (${n} ta katak) ✓`);
@@ -663,6 +669,13 @@ function migrateCompany(from, to) {
   const a = companyKey(from), b = companyKey(to);
   if (a === b) return;
   if (state.marks.comp[a] && !state.marks.comp[b]) { state.marks.comp[b] = { ...state.marks.comp[a], name: to }; delete state.marks.comp[a]; }
+  // guruh bo'yicha belgilar ham yangi nomga ko'chadi
+  for (const ck of Object.keys(state.marks.cg || {})) {
+    if (!ck.startsWith(a + '|')) continue;
+    const nk = b + ck.slice(a.length);
+    if (!state.marks.cg[nk]) state.marks.cg[nk] = state.marks.cg[ck];
+    delete state.marks.cg[ck];
+  }
   if (state.resp && state.resp.assign[a] && !state.resp.assign[b]) { state.resp.assign[b] = state.resp.assign[a]; delete state.resp.assign[a]; }
   if (state.resp && state.resp.assignBy && state.resp.assignBy[a] && !state.resp.assignBy[b]) { state.resp.assignBy[b] = state.resp.assignBy[a]; delete state.resp.assignBy[a]; }
 }

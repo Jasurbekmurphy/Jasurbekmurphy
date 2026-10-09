@@ -140,8 +140,8 @@ function renderDashboard() {
   const compKeys = new Set(cfi >= 0 ? raw.map((r) => r[cfi]).filter((v) => v != null && String(v).trim()).map(companyKey) : []);
   const compList = comp ? comp.list.filter((c) => compKeys.has(c.key) && !c.inst) : [];
   const compN = compList.length;
-  const compWith = compList.filter((c) => c.contract).length;
-  const orderWith = compList.filter((c) => c.order).length;
+  const compWith = compList.filter((c) => c.contract === true).length;
+  const orderWith = compList.filter((c) => c.order === true).length;
   const stuWith = raw.filter((r) => studentContract(r).on).length;
   const instN = raw.filter((r) => studentContract(r).src === 'inst').length;
   const cat4N = raw.filter((r) => studentContract(r).src === 'cat4').length;

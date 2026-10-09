@@ -977,15 +977,42 @@ function dbFieldIdx(...keys) {
 
 function studentKey(row) { return rowKey(state.db, row); }
 
-// 1) Hamkorlik shartnomasi (korxona bilan)
-function companyContract(name) {
-  const m = state.marks.comp[companyKey(name)];
-  return !!(m && m.c);
+// Hamkorlik shartnomasi (c) va korxona buyrug'i (o) — korxona + guruh bo'yicha.
+// marks.cg['korxona|guruh'] — shu guruh uchun alohida belgi; bo'lmasa korxonaning umumiy belgisi (marks.comp) olinadi.
+const cgKey = (k, g) => k + '|' + String(g ?? '').trim();
+function compMark(name, group, f) {
+  const k = companyKey(name);
+  if (group != null && String(group).trim() !== '' && String(group).trim() !== '—') {
+    const o = (state.marks.cg || {})[cgKey(k, group)];
+    if (o && f in o) return !!o[f];
+  }
+  const m = state.marks.comp[k];
+  return !!(m && m[f]);
 }
-// 3) Korxona buyrug'i (korxona o'ziga biriktirilgan o'quvchilarga chiqargan buyruq — korxonada bitta)
-function companyOrder(name) {
-  const m = state.marks.comp[companyKey(name)];
-  return !!(m && m.o);
+// Bir nechta guruh bo'yicha: true — hammasida, 'part' — ba'zilarida, false — hech birida
+function compMarkAll(name, groups, f) {
+  if (!groups.length) return compMark(name, null, f);
+  const v = groups.map((g) => compMark(name, g, f));
+  return v.every(Boolean) ? true : v.some(Boolean) ? 'part' : false;
+}
+function companyContract(name, group) { return compMark(name, group, 'c'); }
+function companyOrder(name, group) { return compMark(name, group, 'o'); }
+// Belgini o'zgartirish: guruh berilsa — faqat shu guruhga; berilmasa — korxonaning hamma guruhlariga
+function setCompMark(name, group, f, val) {
+  const k = companyKey(name);
+  state.marks.cg = state.marks.cg || {};
+  if (group != null && String(group).trim() !== '') {
+    const ck = cgKey(k, group);
+    state.marks.cg[ck] = { ...(state.marks.cg[ck] || {}), [f]: !!val, at: Date.now() };
+    return;
+  }
+  state.marks.comp[k] = { ...(state.marks.comp[k] || {}), [f]: !!val, name, at: Date.now() };
+  for (const ck of Object.keys(state.marks.cg)) {
+    if (!ck.startsWith(k + '|')) continue;
+    const o = { ...state.marks.cg[ck] };
+    delete o[f];
+    if ('c' in o || 'o' in o) state.marks.cg[ck] = o; else delete state.marks.cg[ck];
+  }
 }
 
 // "Ta'lim muassasasida" (3-toifa) o'quvchilar o'qishda bo'ladi — shartnoma talab qilinmaydi
@@ -1034,15 +1061,16 @@ function computeView() {
   const db = state.db;
   if (!db) { state.view = null; return; }
   const ci = dbFieldIdx('korxonanomi', 'korxona');
+  const gvi = dbFieldIdx('gurux', 'guruh');
   const fields = db.fields.concat([
     { col: -1, name: 'Korxona shartnomasi', label: 'Korxona shartnomasi (+/−)', virtual: true, vid: 'comp' },
     { col: -1, name: "O'quvchi shartnomasi", label: "O'quvchi shartnomasi (+/−)", virtual: true, vid: 'stu' },
     { col: -1, name: "Korxona buyrug'i", label: "Korxona buyrug'i (+/−)", virtual: true, vid: 'order' },
   ]);
   const rows = db.rows.map((r) => r.concat([
-    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci]) ? '+' : '−') : null,
+    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyContract(r[ci], gvi >= 0 ? r[gvi] : null) ? '+' : '−') : null,
     (() => { const sc = studentContract(r); return sc.na ? naLabel(sc) : sc.on ? '+' : '−'; })(),
-    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyOrder(r[ci]) ? '+' : '−') : null,
+    ci >= 0 ? (isNoCompanyName(r[ci]) ? CAT4_LABEL : isInstitutionName(r[ci]) ? INST_LABEL : companyOrder(r[ci], gvi >= 0 ? r[gvi] : null) ? '+' : '−') : null,
   ]));
   // Kirill/lotin: korxona nomi ustunidan boshqa hamma matn o'giriladi
   const sc = state.script;
@@ -1100,7 +1128,7 @@ function companyGroups() {
     const withContract = c.rows.filter((r) => studentContract(r).on).length;
     const need = c.rows.filter((r) => !studentContract(r).na).length;
     const inst = isInstitutionName(name);
-    return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && companyContract(name), order: !inst && companyOrder(name), withContract };
+    return { ...c, name, inst, need, groups: [...groups].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true })), contract: !inst && compMarkAll(name, [...groups.keys()].filter((g) => g !== '—'), 'c'), order: !inst && compMarkAll(name, [...groups.keys()].filter((g) => g !== '—'), 'o'), withContract };
   });
   list.sort((a, b) => b.rows.length - a.rows.length || a.name.localeCompare(b.name, 'uz'));
   // Berilgan o'quvchilar bo'yicha korxonadan mas'ul / usta ro'yxati (ism · telefon)
@@ -1131,19 +1159,20 @@ function renderCompanies() {
   if (ui.group) {
     all = all.map((c) => {
       const rows = c.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
-      return { ...c, rows, withContract: rows.filter((r) => studentContract(r).on).length, need: rows.filter((r) => !studentContract(r).na).length, groups: [[ui.group, rows.length]] };
+      return { ...c, rows, withContract: rows.filter((r) => studentContract(r).on).length, need: rows.filter((r) => !studentContract(r).na).length, groups: [[ui.group, rows.length]],
+        contract: !c.inst && companyContract(c.name, ui.group), order: !c.inst && companyOrder(c.name, ui.group) };
     }).filter((c) => c.rows.length);
   }
   let list = all;
   const q = Match.norm(ui.q);
   if (q) list = list.filter((c) => Match.norm(c.name).includes(q) || c.rows.some((r) => Match.norm(r[nameIdx]).includes(q)));
-  if (ui.show === 'yes') list = list.filter((c) => c.contract);
-  if (ui.show === 'no') list = list.filter((c) => !c.contract && !c.inst);
-  if (ui.show === 'noorder') list = list.filter((c) => !c.order && !c.inst);
+  if (ui.show === 'yes') list = list.filter((c) => c.contract === true);
+  if (ui.show === 'no') list = list.filter((c) => c.contract !== true && !c.inst);
+  if (ui.show === 'noorder') list = list.filter((c) => c.order !== true && !c.inst);
   const students = all.reduce((n, c) => n + c.need, 0);
   const stuWith = all.reduce((n, c) => n + c.withContract, 0);
-  const compWith = all.filter((c) => c.contract).length;
-  const orderWith = all.filter((c) => c.order).length;
+  const compWith = all.filter((c) => c.contract === true).length;
+  const orderWith = all.filter((c) => c.order === true).length;
   const instN = all.filter((c) => c.inst).reduce((n, c) => n + c.rows.length, 0) + all.filter((c) => !c.inst).reduce((n, c) => n + c.rows.length - c.need, 0);
   const realComps = all.filter((c) => !c.inst).length;
   const cat4N = db.rows.filter((r) => (!ui.group || String(r[gi] ?? '').trim() === ui.group) && studentCategory(r) === 'cat4').length;
@@ -1153,9 +1182,9 @@ function renderCompanies() {
     let gr = db.rows.filter((r) => String(r[gi] ?? '').trim() === ui.group);
     const cfi = dbFieldIdx('korxonanomi', 'korxona');
     if (q) gr = gr.filter((r) => Match.norm(r[nameIdx]).includes(q) || Match.norm(r[cfi]).includes(q));
-    if (ui.show === 'yes') gr = gr.filter((r) => cfi >= 0 && r[cfi] && companyContract(r[cfi]));
-    if (ui.show === 'no') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyContract(r[cfi])));
-    if (ui.show === 'noorder') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyOrder(r[cfi])));
+    if (ui.show === 'yes') gr = gr.filter((r) => cfi >= 0 && r[cfi] && companyContract(r[cfi], ui.group));
+    if (ui.show === 'no') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyContract(r[cfi], ui.group)));
+    if (ui.show === 'noorder') gr = gr.filter((r) => !(cfi >= 0 && r[cfi] && companyOrder(r[cfi], ui.group)));
     return `
       <div class="row-btns" style="margin-top:0">
         <button data-allgroup="1">Guruhning hammasiga o'quvchi shartnomasi ＋</button>
@@ -1166,16 +1195,16 @@ function renderCompanies() {
         <tbody>${gr.map((r, i) => {
           const sc = studentContract(r);
           const comp = cfi >= 0 ? r[cfi] : null;
-          const cc = comp ? companyContract(comp) : false;
-          const co = comp ? companyOrder(comp) : false;
+          const cc = comp ? companyContract(comp, ui.group) : false;
+          const co = comp ? companyOrder(comp, ui.group) : false;
           const instC = comp && isInstitutionName(comp);
           return `<tr>
             <td>${i + 1}</td>
             <td class="wrap"><b>${esc(r[nameIdx])}</b></td>
             <td>${sc.na ? naBadge(sc) : `<button class="ct sm ${sc.on ? 'on' : ''}" data-skey="${esc(studentKey(r))}" data-on="${sc.on ? 1 : 0}">${sc.on ? '＋ bor' : "− yo'q"}</button>`}</td>
             <td class="wrap">${isNoCompanyName(comp) ? '<span class="cat4-badge">4-toifa · korxonasiz</span>' : esc(comp)}</td>
-            <td>${instC ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : !isNoCompanyName(comp) ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
-            <td>${instC ? '' : !isNoCompanyName(comp) ? `<button class="ct sm ${co ? 'on' : ''}" data-okey="${esc(companyKey(comp))}" data-cname="${esc(comp)}">${co ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${instC ? '<span class="inst-badge">🎓 Ta\'lim muassasasi</span>' : !isNoCompanyName(comp) ? `<button class="ct sm ${cc ? 'on' : ''}" data-ckey="${esc(companyKey(comp))}" data-cname="${esc(comp)}" data-grp="${esc(ui.group)}" data-cur="${cc ? 1 : 0}">${cc ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
+            <td>${instC ? '' : !isNoCompanyName(comp) ? `<button class="ct sm ${co ? 'on' : ''}" data-okey="${esc(companyKey(comp))}" data-cname="${esc(comp)}" data-grp="${esc(ui.group)}" data-cur="${co ? 1 : 0}">${co ? '＋ bor' : "− yo'q"}</button>` : ''}</td>
           </tr>`;
         }).join('') || '<tr><td colspan="6" class="muted">Hech narsa topilmadi.</td></tr>'}</tbody>
       </table></div>`;
@@ -1211,13 +1240,13 @@ function renderCompanies() {
       if (sel && !c.groups.some(([gname]) => gname === sel)) sel = '';
       const shown = sel ? c.rows.filter((r) => String(r[data.gi] ?? '—') === sel) : c.rows;
       return `
-      <details class="comp ${c.contract && c.order ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
+      <details class="comp ${c.contract === true && c.order === true ? 'has' : ''} ${c.inst ? 'inst' : ''}" data-key="${esc(c.key)}" ${ui.open.has(c.key) ? 'open' : ''}>
         <summary>
           <div class="comp-top">
             <div class="comp-name">${esc(c.name)}</div>
             ${c.inst ? '<span class="inst-badge">🎓 Ta\'lim muassasasi · shartnoma shart emas</span>' : `<div class="docs">
-              <button class="ct ${c.contract ? 'on' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxona bilan hamkorlik shartnomasi">🤝 Hamkorlik ${c.contract ? '＋' : '−'}</button>
-              <button class="ct ${c.order ? 'on' : ''}" data-okey="${esc(c.key)}" data-cname="${esc(c.name)}" title="Korxonaning o'quvchilarga chiqargan buyrug'i">📋 Buyruq ${c.order ? '＋' : '−'}</button>
+              <button class="ct ${c.contract === true ? 'on' : c.contract ? 'part' : ''}" data-ckey="${esc(c.key)}" data-cname="${esc(c.name)}" data-grp="${esc(ui.group)}" data-cur="${c.contract === true ? 1 : 0}" title="${ui.group ? esc(ui.group) + '-guruh uchun' : "Hamma guruhlar uchun"} — korxona bilan hamkorlik shartnomasi">🤝 Hamkorlik ${c.contract === true ? '＋' : c.contract ? '± qisman' : '−'}</button>
+              <button class="ct ${c.order === true ? 'on' : c.order ? 'part' : ''}" data-okey="${esc(c.key)}" data-cname="${esc(c.name)}" data-grp="${esc(ui.group)}" data-cur="${c.order === true ? 1 : 0}" title="${ui.group ? esc(ui.group) + '-guruh uchun' : "Hamma guruhlar uchun"} — korxonaning o'quvchilarga chiqargan buyrug'i">📋 Buyruq ${c.order === true ? '＋' : c.order ? '± qisman' : '−'}</button>
             </div>`}
           </div>
           <div class="comp-sub">
@@ -1269,16 +1298,12 @@ function renderCompanies() {
   }));
   box.querySelectorAll('[data-ckey]').forEach((b) => (b.onclick = (e) => {
     e.preventDefault(); e.stopPropagation();
-    const k = b.dataset.ckey;
-    const cur = state.marks.comp[k] || {};
-    state.marks.comp[k] = { ...cur, c: !cur.c, name: b.dataset.cname, at: Date.now() };
+    setCompMark(b.dataset.cname, b.dataset.grp || null, 'c', b.dataset.cur !== '1');
     marksChanged();
   }));
   box.querySelectorAll('[data-okey]').forEach((b) => (b.onclick = (e) => {
     e.preventDefault(); e.stopPropagation();
-    const k = b.dataset.okey;
-    const cur = state.marks.comp[k] || {};
-    state.marks.comp[k] = { ...cur, o: !cur.o, name: b.dataset.cname, at: Date.now() };
+    setCompMark(b.dataset.cname, b.dataset.grp || null, 'o', b.dataset.cur !== '1');
     marksChanged();
   }));
   box.querySelectorAll('[data-skey]').forEach((b) => (b.onclick = () => {
@@ -1316,7 +1341,7 @@ function renderCompanies() {
   }));
   $('#comp-xl').onclick = async () => {
     const rows = list.map((c, i) => [i + 1, c.name, c.rows.length, c.groups.map(([gname, n]) => `${gname} (${n})`).join(', '),
-      c.inst ? INST_LABEL : c.contract ? '+' : '−', c.inst ? INST_LABEL : c.order ? '+' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, data.people(c.rows).join('; ')]);
+      c.inst ? INST_LABEL : c.contract === true ? '+' : c.contract ? 'qisman (guruhlar bo\'yicha)' : '−', c.inst ? INST_LABEL : c.order === true ? '+' : c.order ? 'qisman (guruhlar bo\'yicha)' : '−', c.need ? `${c.withContract}/${c.need}` : INST_LABEL, data.people(c.rows).join('; ')]);
     const blob = await XlsxWrite.buildWorkbook({ title: 'Korxonalar ro\'yxati', sheetName: 'Korxonalar',
       headers: ['№', 'Korxona nomi', "O'quvchilar soni", 'Guruhlar', 'Hamkorlik shartnomasi', "Korxona buyrug'i", "O'quvchi shartnomalari", "Korxonadan mas'ul"], rows });
     downloadBlob(blob, 'Korxonalar.xlsx');
@@ -1376,7 +1401,7 @@ function syncBase(p) {
   // nusxa: keyingi o'zgarishlar asosiy (base) holatga ta'sir qilmasligi uchun
   return JSON.parse(JSON.stringify({
     db: dbSig(p.db), tpl: byKey(p.templates, 'name'),
-    comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {},
+    comp: (p.marks && p.marks.comp) || {}, stu: (p.marks && p.marks.stu) || {}, cg: (p.marks && p.marks.cg) || {},
     people: byKey(p.resp && p.resp.people, 'id'), assign: (p.resp && p.resp.assign) || {}, sched: (p.resp && p.resp.sched) || {}, real: (p.resp && p.resp.real) || {}, assignBy: (p.resp && p.resp.assignBy) || {}, band: p.band || {}, bot: p.bot || null,
   }));
 }
@@ -1410,7 +1435,7 @@ function mergePayload(base, L, R, prefer) {
   return {
     ...R, v: 1, savedAt: Date.now(), token: R.token || L.token, db, bot: bot || L.bot || R.bot,
     templates: Object.values(mergeMap(b.tpl, l.tpl, r.tpl, prefer)),
-    marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer) },
+    marks: { comp: mergeMap(b.comp, l.comp, r.comp, prefer), stu: mergeMap(b.stu, l.stu, r.stu, prefer), cg: mergeMap(b.cg, l.cg, r.cg, prefer) },
     band: mergeMap(b.band, l.band, r.band, prefer),
     resp: { ...(R.resp || {}), people: Object.values(people), assign, assignBy, sched: mergeMap(b.sched, l.sched, r.sched, prefer), real: mergeMap(b.real, l.real, r.real, prefer) },
   };
