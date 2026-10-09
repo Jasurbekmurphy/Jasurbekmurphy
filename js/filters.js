@@ -108,11 +108,20 @@
    */
   function render(box, db, filters, onChange) {
     const pre = presets(db);
-    const valueCounts = (field) => {
+    // "VA" bilan bog'langan shartda qiymatlar oldingi shartlardan o'tgan qatorlardan olinadi
+    // (masalan 65-guruh tanlansa — keyingi shartda faqat 65-guruhdagi korxonalar)
+    const baseRows = (fi) => {
+      const f = filters[fi];
+      if (fi === 0 || f.join === 'or') return db.rows;
+      return apply(db.rows, filters.slice(0, fi));
+    };
+    const valueCounts = (field, fi, selected) => {
       const counts = new Map();
-      for (const r of db.rows) { const v = String(r[field] ?? ''); counts.set(v, (counts.get(v) || 0) + 1); }
+      for (const r of baseRows(fi)) { const v = String(r[field] ?? ''); counts.set(v, (counts.get(v) || 0) + 1); }
+      for (const v of selected || []) if (!counts.has(v)) counts.set(v, 0); // tanlangani yo'qolmasin
       return [...counts].sort((a, b) => a[0].localeCompare(b[0], 'uz', { numeric: true }));
     };
+    const narrowed = (fi) => fi > 0 && filters[fi].join !== 'or' && filters.slice(0, fi).some(isActive);
     const fieldSelect = (fi, f) => `
       <select data-fi="${fi}" class="filter-field">
         <option value="">Ustunni tanlang…</option>
@@ -126,8 +135,8 @@
         let body = '';
         if (f.field !== '') {
           if (f.op === 'in') {
-            const vc = valueCounts(f.field);
-            body = `${vc.length > 8 ? `<input type="search" class="chip-search" placeholder="Qiymat qidirish…">` : ''}
+            const vc = valueCounts(f.field, fi, f.values);
+            body = `${narrowed(fi) ? `<p class="fl-note">Oldingi shart(lar)ga mos ${baseRows(fi).length} ta qator bo'yicha ko'rsatilmoqda.</p>` : ''}${vc.length > 8 ? `<input type="search" class="chip-search" placeholder="Qiymat qidirish…">` : ''}
               <div class="chips">${vc.map(([v, n]) =>
               `<label class="chip ${f.values.includes(v) ? 'on' : ''}"><input type="checkbox" data-fi="${fi}" value="${esc(v)}" ${f.values.includes(v) ? 'checked' : ''}><span class="cv">${esc(v || "(bo'sh)")}</span><span class="cn">${n}</span></label>`).join('')}</div>`;
           } else if (f.op === 'contains') {
@@ -178,6 +187,8 @@
     box.querySelectorAll('.chips input[type=checkbox]').forEach((cb) => (cb.onchange = () => {
       const f = filters[+cb.dataset.fi];
       f.values = cb.checked ? [...f.values, cb.value] : f.values.filter((v) => v !== cb.value);
+      // keyingi shartlar qiymatlari shunga qarab o'zgaradi
+      if (+cb.dataset.fi < filters.length - 1) { rerender(); return; }
       cb.closest('.chip').classList.toggle('on', cb.checked);
       cb.closest('.cond').classList.toggle('active', isActive(f));
       onChange();
@@ -194,6 +205,8 @@
       inp.closest('.cond').classList.toggle('active', isActive(f));
       onChange();
     }));
+    // matn / oraliq yozib bo'linganda keyingi shartlar qiymatlari yangilanadi
+    box.querySelectorAll('input[data-k]').forEach((inp) => (inp.onchange = () => { if (+inp.dataset.fi < filters.length - 1) rerender(); }));
     box.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => {
       filters[+b.dataset.join].join = b.dataset.v;
       rerender();
