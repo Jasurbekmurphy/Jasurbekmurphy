@@ -83,14 +83,6 @@
 
     const styleRow = opts.styleRow != null ? rows.get(opts.styleRow) : null;
 
-    // Umumiy matnlar (sharedStrings): t="s" katak ichida faqat raqamli ishora bo'ladi
-    let shared = null;
-    const ssFile = zip.file('xl/sharedStrings.xml');
-    if (ssFile) {
-      const ss = new DOMParser().parseFromString(await ssFile.async('string'), 'application/xml');
-      shared = [...ss.getElementsByTagNameNS(ss.documentElement.namespaceURI, 'si')].map((si) => si.textContent);
-    }
-
     function getRow(r) {
       let row = rows.get(r);
       if (row) return row;
@@ -127,15 +119,9 @@
       return el;
     }
 
-    // Katakda haqiqiy (bo'sh bo'lmagan) qiymat bormi — bo'sh matn ("") va faqat bo'shliqlar bo'sh hisoblanadi
     function hasValue(el) {
-      const isShared = el.getAttribute('t') === 's';
-      return [...el.children].some((ch) => {
-        if (ch.localName === 'is') return ch.textContent.trim() !== '';
-        if (ch.localName !== 'v' || ch.textContent === '') return false;
-        if (isShared && shared) return String(shared[+ch.textContent] ?? '').trim() !== '';
-        return ch.textContent.trim() !== '';
-      });
+      return [...el.children].some((ch) => (ch.localName === 'v' && ch.textContent !== '') ||
+        (ch.localName === 'is' && ch.textContent !== ''));
     }
 
     let written = 0, skipped = 0, maxR = -1, maxC = -1;

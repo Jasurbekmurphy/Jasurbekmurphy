@@ -430,33 +430,9 @@ function renderPending() {
 }
 
 // ---------------------------------------------------------------- TO'LDIRISH paneli
-// Ma'no bo'yicha moslash (sinonimlar): shablon sarlavhasi → bazadagi ustun.
-// field: null — bazada bunday ustun yo'q, bu sarlavha hech qaysi ustunga ulanmasin.
-const fold = (t) => Match.canon(t).replace(/x/g, 'h').replace(/q/g, 'k').replace(/(.)\1+/g, '$1');
-const HEADER_RULES = [
-  { h: (c) => /stir|inn$|soliktolov/.test(c) && !c.includes('jshshir'), f: (c) => /stir/.test(c) },
-  { h: (c) => /(korhona|tashkilot)/.test(c) && !/(masul|rahbar|ustasi|telefon|auditor|buyruk|shartnoma)/.test(c), f: (c) => c.includes('korhona') && c.includes('nomi') && !/(masul|rahbar)/.test(c) },
-  { h: (c) => /^(tehnikum|kolej|talimuasasasi|talimuasasasinomi|ohuvyurti|ukuvyurti)$/.test(c), f: (c) => c.includes('talimuasasasinomi') },
-  { h: (c) => /^(kurs|boskich|boskichi|kursi)$/.test(c), f: (c) => c.startsWith('boskich') || c === 'kurs' },
-  { h: (c) => /^(guruh|guruhi|guruhrakami)/.test(c), f: (c) => c.startsWith('guruh') },
-  { h: (c) => /kabulyili/.test(c), f: (c) => /kabulyili/.test(c) },
-];
-function ruleField(text) {
-  const c = fold(text);
-  const db = state.view;
-  for (const rule of HEADER_RULES) {
-    if (!rule.h(c)) continue;
-    const i = db.fields.findIndex((f) => !f.num && !f.virtual && rule.f(fold(f.name)));
-    return i >= 0 ? { idx: i, score: 0.97 } : { idx: '', score: 0, none: true };
-  }
-  return null;
-}
-
 function bestField(text) {
   const db = state.view;
   if (isNumHeader(text)) return { idx: '__num__', score: 1 };
-  const rf = ruleField(text);
-  if (rf) return rf;
   let best = { idx: '', score: 0 };
   db.fields.forEach((f, i) => {
     if (f.num) return;
@@ -479,7 +455,6 @@ function columnMatch(sheet, r, c) {
   let best = { idx: '', score: 0 };
   for (const t of cands) {
     const b = bestField(t);
-    if (b.none && t === own) return { idx: '', score: 0, text: String(own) }; // aniq "bazada yo'q" ustun
     if (b.idx !== '' && b.score > best.score) best = b;
   }
   return { ...best, text: own != null ? String(own) : String(above) };
@@ -573,34 +548,22 @@ function buildLookupIndex(idx) {
   const db = state.view;
   const isJ = Match.canon(db.fields[idx].name).includes('jshshir');
   const key = (v) => (isJ ? Match.digits(v) : Match.nameKey(v));
-  const exact = new Map(), short = new Map(), pkey = new Map(), pshort = new Map();
-  const toks = [];
-  const put = (m, k, r) => m.set(k, m.has(k) && m.get(k) !== r ? null : r); // null — bir nechta mos keladi
+  const exact = new Map(), short = new Map();
   for (const r of db.rows) {
     const k = key(r[idx]);
     if (!k) continue;
     if (!exact.has(k)) exact.set(k, r);
     if (!isJ) {
-      put(short, k.split(' ').slice(0, 2).join(' '), r);
-      // kirill/lotin, х/ҳ, қ/к, ўғли/қизi kabi farqlarga chidamli kalit
-      const t = Match.personTokens(r[idx]);
-      toks.push([t, r]);
-      put(pkey, t.join(' '), r);
-      put(pshort, t.slice(0, 2).join(' '), r);
+      const s = k.split(' ').slice(0, 2).join(' ');
+      short.set(s, short.has(s) ? null : r); // null — bir nechta mos keladi
     }
   }
   return (v) => {
     const k = key(v);
     if (!k) return null;
     if (exact.has(k)) return exact.get(k);
-    if (isJ) return null;
-    const t = Match.personTokens(v);
-    const hit = pkey.get(t.join(' ')) || short.get(k.split(' ').slice(0, 2).join(' ')) || (t.length >= 2 && pshort.get(t.slice(0, 2).join(' ')));
-    if (hit) return hit;
-    // oxirgi urinish: o'xshashlik (bitta harf xatosi va h.k.), aniq ustunlik bilan
-    let best = null, bs = 0, second = 0;
-    for (const [tk, r] of toks) { const sc = Match.personScore(t, tk); if (sc > bs) { second = bs; bs = sc; best = r; } else if (sc > second) second = sc; }
-    return bs >= 0.88 && bs - second >= 0.04 ? best : null;
+    if (!isJ) return short.get(k.split(' ').slice(0, 2).join(' ')) || null;
+    return null;
   };
 }
 
@@ -623,9 +586,6 @@ function buildWrites() {
       const out = {};
       for (const col of cols) {
         if (col === keyCol || col.field === '__num__') continue;
-        // Shablonda allaqachon yozilgan katak saqlanadi — faqat bo'sh kataklar to'ldiriladi
-        const cur = t.sheet.grid[r][col.c];
-        if (t.onlyEmpty !== false && cur != null && String(cur).trim() !== '') { out[col.c] = cur; continue; }
         writes.push({ r, c: col.c, value: row[col.field] });
         out[col.c] = row[col.field];
       }

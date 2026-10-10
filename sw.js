@@ -1,5 +1,5 @@
 // Oflayn ishlash uchun: ilova fayllari keshda saqlanadi.
-const CACHE = 'jadval-baza-v42';
+const CACHE = 'jadval-baza-v41';
 const FILES = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'js/match.js', 'js/xlsxfill.js', 'js/xlsxwrite.js', 'js/filters.js', 'js/sync.js', 'js/translit.js', 'js/spell.js', 'js/edit.js', 'js/dashboard.js', 'js/attendance.js', 'js/band.js',
   'vendor/xlsx.full.min.js', 'vendor/jszip.min.js', 'manifest.webmanifest', 'icon.svg',
