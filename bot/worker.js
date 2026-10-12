@@ -37,6 +37,8 @@ const WD = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Jum
 const dueIdx = (c) => c.s.map((s, i) => i).filter((i) => String(c.s[i][3] || '123456').includes(String(weekday())));
 // Korxonaning bugungi mas'uli: Du–Chor va Pay–Shan uchun har xil bo'lishi mumkin (pd)
 const ownerNow = (c) => { const w = weekday(), h = w >= 1 && w <= 3 ? '123' : w >= 4 ? '456' : ''; return (c.pd && h && c.pd[h]) || c.p; };
+// Tugmada faqat familiya va ism (otasining ismi va "ўғли/қизи"siz) — uzun ism kesilib qolmasin
+const shortName = (n) => String(n ?? '').trim().split(/\s+/).slice(0, 2).join(' ');
 const hhmm = (ms) => new Date(ms + 5 * 3600 * 1000).toISOString().slice(11, 16);
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const digits = (s) => String(s ?? '').replace(/\D+/g, '');
@@ -175,7 +177,7 @@ function companyView(roster, ci, marks, pg) {
   const icon = (v) => (v === 1 ? '✅' : v === 0 ? '❌' : '⬜');
   const rows = due.slice(pg * PAGE, pg * PAGE + PAGE).map((si) => {
     const s = c.s[si];
-    return [{ text: `${icon(marks[s[0]])} ${s[1]}${s[2] ? ' · ' + s[2] : ''}`.slice(0, 64), callback_data: `t:${roster.v}:${ci}:${si}:${pg}` }];
+    return [{ text: `${icon(marks[s[0]])} ${shortName(s[1])}${s[2] ? ' · ' + s[2] : ''}`.slice(0, 64), callback_data: `t:${roster.v}:${ci}:${si}:${pg}` }];
   });
   if (pages > 1) {
     rows.push([
