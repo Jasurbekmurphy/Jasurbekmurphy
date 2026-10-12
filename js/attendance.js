@@ -4,7 +4,7 @@
 
 const attUi = {
   sub: 'att', date: '', data: null, err: '', loading: false, at: 0, timer: null, status: null,
-  q: '', open: new Set(), gopen: new Set(), view: 'people', aq: '', agroup: '', afree: false, pushedAt: 0, pushing: false,
+  q: '', open: new Set(), gopen: new Set(), view: 'people', aq: '', agroups: [], agOpen: false, afree: false, pushedAt: 0, pushing: false,
 };
 const hashCache = new Map();
 const tkToday = () => new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -403,7 +403,9 @@ function peopleHtml() {
   const q = Match.norm(attUi.aq);
   let comps = list;
   if (q) comps = comps.filter((c) => Match.norm(c.name).includes(q));
-  if (attUi.agroup) comps = comps.filter((c) => c.rows.some((r) => String(r[gi] ?? '').trim() === attUi.agroup));
+  // bir nechta guruh tanlanishi mumkin: shu guruhlardan birortasining o'quvchisi bor korxonalar
+  attUi.agroups = attUi.agroups.filter((g) => groupVals.includes(g));
+  if (attUi.agroups.length) { const set = new Set(attUi.agroups); comps = comps.filter((c) => c.rows.some((r) => set.has(String(r[gi] ?? '').trim()))); }
   if (attUi.afree) comps = comps.filter((c) => !ownersOf(c.key).length);
   const opts = (sel) => `<option value="">— biriktirilmagan —</option>${state.resp.people.map((p) => `<option value="${esc(p.id)}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}`;
   const free = list.filter((c) => !ownersOf(c.key).length).length;
@@ -450,9 +452,14 @@ function peopleHtml() {
         <h3>Korxonalarga biriktirish</h3>
         <div class="a-bar">
           <input type="search" id="a-q" placeholder="Korxona nomi…" value="${esc(attUi.aq)}">
-          <select id="a-group"><option value="">Barcha guruhlar</option>${groupVals.map((g) => `<option ${attUi.agroup === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
+          <button type="button" id="a-group" class="a-gbtn ${attUi.agroups.length ? 'on-soft' : ''}">${attUi.agroups.length ? `Guruhlar: ${attUi.agroups.map(esc).join(', ')}` : 'Barcha guruhlar'} ▾</button>
           <label class="check"><input type="checkbox" id="a-free" ${attUi.afree ? 'checked' : ''}> Faqat biriktirilmaganlar (${free})</label>
         </div>
+        ${attUi.agOpen ? `<div class="a-gpanel">
+          <div class="a-gpanel-top"><span class="small muted">Bir nechta guruhni belgilang</span>
+            <span><button type="button" class="link" id="a-gclear">Hammasini olib tashlash</button> <button type="button" id="a-gdone">✓ Tayyor</button></span></div>
+          <div class="chips">${groupVals.map((g) => `<label class="chip ${attUi.agroups.includes(g) ? 'on' : ''}"><input type="checkbox" data-ag="${esc(g)}" ${attUi.agroups.includes(g) ? 'checked' : ''}><span class="cv">${esc(g)}</span></label>`).join('')}</div>
+        </div>` : ''}
         ${state.resp.people.length ? `<div class="a-bulk"><span class="small">Ro'yxatdagi ${comps.length} ta korxonani</span>
           <select id="a-bulk-p">${opts('')}</select><button id="a-bulk-go">biriktirish</button></div>` : '<p class="small warn">Avval chap tomonda mas\'ul qo\'shing.</p>'}
         ${state.resp.people.length ? `<div class="a-auto"><button id="a-auto">🤖 Ustalar bo'yicha kunlarga taqsimlash</button><span class="small muted">3+3 jadvalga qarab: har kunlari korxonaga o'sha kunlari keladigan guruhlarning ustasi biriktiriladi.</span></div>` : ''}
@@ -514,7 +521,14 @@ function bindPeople(box) {
   }));
   const keepFocus = (id, fn) => { const el = $(id); el.oninput = el.onchange = (e) => { const pos = e.target.selectionStart; fn(e); renderAttendance(); const n = $(id); if (n.setSelectionRange && pos != null) { n.focus(); n.setSelectionRange(pos, pos); } }; };
   keepFocus('#a-q', (e) => { attUi.aq = e.target.value; });
-  $('#a-group').onchange = (e) => { attUi.agroup = e.target.value; renderAttendance(); };
+  $('#a-group').onclick = () => { attUi.agOpen = !attUi.agOpen; renderAttendance(); };
+  box.querySelectorAll('[data-ag]').forEach((cb) => (cb.onchange = () => {
+    const g = cb.dataset.ag;
+    attUi.agroups = cb.checked ? [...attUi.agroups.filter((x) => x !== g), g] : attUi.agroups.filter((x) => x !== g);
+    renderAttendance();
+  }));
+  const gc = $('#a-gclear'); if (gc) gc.onclick = () => { attUi.agroups = []; renderAttendance(); };
+  const gd = $('#a-gdone'); if (gd) gd.onclick = () => { attUi.agOpen = false; renderAttendance(); };
   $('#a-free').onchange = (e) => { attUi.afree = e.target.checked; renderAttendance(); };
   box.querySelectorAll('[data-assign]').forEach((s) => (s.onchange = async () => {
     if (s.value) state.resp.assign[s.dataset.assign] = s.value; else delete state.resp.assign[s.dataset.assign];

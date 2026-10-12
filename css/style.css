@@ -710,3 +710,9 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .col-pick-close { position: sticky; top: -8px; display: flex; justify-content: flex-end; background: var(--surface); padding: 2px 0 6px; margin: -2px 0 2px; }
 .col-pick-close button { min-height: 32px; padding: 2px 12px; font-size: 13px; }
 .ct.part { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+/* Korxonalarga biriktirish: bir nechta guruh tanlash */
+.a-gbtn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.a-gpanel { border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin: -2px 0 10px; background: var(--surface-2); }
+.a-gpanel-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; }
+.a-gpanel-top button:not(.link) { min-height: 30px; padding: 2px 12px; font-size: 13px; }
+.a-gpanel .chips { max-height: 30vh; overflow: auto; }
