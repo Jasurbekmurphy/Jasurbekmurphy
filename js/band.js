@@ -1,10 +1,10 @@
-/* global state, $, esc, toast, Match, saveLocal, cloudPush, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, dialog, findHeader */
+/* global companyKey, state, $, esc, toast, Match, saveLocal, cloudPush, studentKey, dbFieldIdx, XlsxWrite, downloadBlob, readWorkbook, readFile, dialog, findHeader */
 'use strict';
 // Bandlik: o'quvchi rasmiy qayerda ishlaydi, maosh qanday olinadi (oylik / naqd) va oylik miqdori.
 // Ma'lumot bazaning ustunlariga tegmaydi — alohida saqlanadi: state.band[studentKey] = { w, t, s }
 //   w — rasmiy ish joyi, t — 'oylik' | 'naqd', s — oylik (so'm)
 
-const bandUi = { q: '', group: '', kurs: '', show: 'all', limit: 100 };
+const bandUi = { q: '', group: '', kurs: '', comp: '', show: 'all', limit: 100, bw: null, bt: '', bs: '', bonly: true };
 const PAY = [['oylik', '💳 Oylik'], ['naqd', '💵 Naqd']];
 const payLabel = (t) => (t === 'naqd' ? 'Naqd pul' : t === 'oylik' ? 'Oylik' : '');
 const fmtSum = (n) => (n ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : '');
@@ -28,12 +28,15 @@ function setBand(key, patch) {
 function bandRows() {
   const db = state.view;
   const gi = dbFieldIdx('gurux', 'guruh'), ci = dbFieldIdx('bosqich', 'kurs');
+  const cfi = dbFieldIdx('korxonanomi', 'korxona');
   const ni = db.nameIdx >= 0 ? db.nameIdx : 0;
   const q = Match.norm(bandUi.q);
   const all = db.rows.map((r, i) => ({ r, raw: state.db.rows[i], i }));
   const rows = all.filter(({ r, raw }) => {
     if (bandUi.group && String(r[gi] ?? '').trim() !== bandUi.group) return false;
     if (bandUi.kurs && String(r[ci] ?? '').trim() !== bandUi.kurs) return false;
+    // bazadagi biriktirilgan (rasmiy) korxona bo'yicha
+    if (bandUi.comp && (cfi < 0 || (companyKey(raw[cfi]) || '__none') !== bandUi.comp)) return false;
     const b = bandOf(raw);
     if (bandUi.show === 'work' && !b.w) return false;
     if (bandUi.show === 'nowork' && b.w) return false;
@@ -42,7 +45,19 @@ function bandRows() {
     if (q && !Match.norm(r[ni]).includes(q) && !Match.norm(b.w).includes(q)) return false;
     return true;
   });
-  return { all, rows, gi, ci, ni };
+  return { all, rows, gi, ci, ni, cfi };
+}
+
+// Korxonalar ro'yxati (filtr uchun): kalit, nom, o'quvchilar soni — ko'pidan kamiga
+function bandCompanies(all, cfi) {
+  if (cfi < 0) return [];
+  const m = new Map();
+  for (const { raw } of all) {
+    const k = companyKey(raw[cfi]) || '__none';
+    if (!m.has(k)) m.set(k, { k, name: k === '__none' ? '(korxonasiz)' : String(raw[cfi]).trim(), n: 0 });
+    m.get(k).n++;
+  }
+  return [...m.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'uz'));
 }
 
 function bandStats(list) {
@@ -70,7 +85,10 @@ function renderBand() {
   const box = $('#band-body');
   if (!box) return;
   if (!state.db || !state.view) { box.innerHTML = '<div class="box"><p class="muted">Baza bo\'sh. Avval "Baza" bo\'limida asosiy jadvalni yuklang.</p></div>'; return; }
-  const { all, rows, gi, ci, ni } = bandRows();
+  const { all, rows, gi, ci, ni, cfi } = bandRows();
+  const comps = bandCompanies(all, cfi);
+  const selComp = comps.find((c) => c.k === bandUi.comp);
+  if (bandUi.comp && !selComp) bandUi.comp = '';
   const vals = (idx) => (idx < 0 ? [] : [...new Set(all.map(({ r }) => String(r[idx] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz', { numeric: true })));
   const shown = rows.slice(0, bandUi.limit);
   box.innerHTML = `
@@ -80,10 +98,22 @@ function renderBand() {
         <input type="search" id="bd-q" placeholder="F.I.Sh yoki ish joyi…" value="${esc(bandUi.q)}">
         ${ci >= 0 ? `<select id="bd-kurs"><option value="">Barcha kurslar</option>${vals(ci).map((v) => `<option value="${esc(v)}" ${bandUi.kurs === v ? 'selected' : ''}>${esc(v)}-kurs</option>`).join('')}</select>` : ''}
         ${gi >= 0 ? `<select id="bd-group"><option value="">Barcha guruhlar</option>${vals(gi).map((v) => `<option ${bandUi.group === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
+        ${comps.length ? `<select id="bd-comp" title="Bazadagi biriktirilgan korxona"><option value="">Barcha korxonalar</option>${comps.map((c) => `<option value="${esc(c.k)}" ${bandUi.comp === c.k ? 'selected' : ''}>${esc(c.name)} (${c.n})</option>`).join('')}</select>` : ''}
         <select id="bd-show">
           ${[['all', 'Hammasi'], ['work', 'Ishlaydiganlar'], ['nowork', 'Ish joyi yozilmagan'], ['oylik', '💳 Oylik oladiganlar'], ['naqd', '💵 Naqd oladiganlar']].map(([k, l]) => `<option value="${k}" ${bandUi.show === k ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
       </div>
+      ${rows.length ? `<details class="band-bulk" ${bandUi.bulkOpen ? 'open' : ''}>
+        <summary>✏️ Ro'yxatdagi <b>${rows.length}</b> ta o'quvchiga birdan yozish</summary>
+        <div class="bb-row">
+          <input id="bb-w" placeholder="Rasmiy ish joyi" value="${esc(bandUi.bw != null ? bandUi.bw : selComp && selComp.k !== '__none' ? selComp.name : '')}">
+          <select id="bb-t"><option value="">To'lov turi o'zgarmasin</option>${PAY.map(([t, l]) => `<option value="${t}" ${bandUi.bt === t ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <input id="bb-s" placeholder="Oylik, so'm" inputmode="numeric" value="${esc(bandUi.bs)}">
+          <button class="primary" id="bb-go">Qo'llash</button>
+        </div>
+        <label class="check small"><input type="checkbox" id="bb-only" ${bandUi.bonly ? 'checked' : ''}> Faqat bo'sh kataklarga yozish (oldin yozilganlari o'zgarmasin)</label>
+        <p class="small muted">Bo'sh qoldirilgan maydon o'zgartirilmaydi. Korxona tanlansa, ish joyiga uning nomi o'zi qo'yiladi.</p>
+      </details>` : ''}
       <div class="band-xl">
         <button id="bd-xl">⬇ Excel</button>
         <label class="file-btn">📤 Excel'dan yuklash<input type="file" id="bd-file" accept=".xlsx,.xlsm,.xls"></label>
@@ -116,6 +146,33 @@ function bindBand(box, rows) {
   keepFocus('#bd-q', (v) => { bandUi.q = v; });
   const sel = (id, k) => { const el = $(id); if (el) el.onchange = () => { bandUi[k] = el.value; bandUi.limit = 100; renderBand(); }; };
   sel('#bd-kurs', 'kurs'); sel('#bd-group', 'group'); sel('#bd-show', 'show');
+  const cs = $('#bd-comp'); if (cs) cs.onchange = () => { bandUi.comp = cs.value; bandUi.bw = null; bandUi.limit = 100; renderBand(); };
+  const bulk = box.querySelector('.band-bulk');
+  if (bulk) {
+    bulk.ontoggle = () => { bandUi.bulkOpen = bulk.open; };
+    const bw = $('#bb-w'), bt = $('#bb-t'), bs = $('#bb-s'), bo = $('#bb-only');
+    bw.oninput = () => { bandUi.bw = bw.value; };
+    bt.onchange = () => { bandUi.bt = bt.value; };
+    bs.oninput = () => { const d = Match.digits(bs.value).slice(0, 12); bs.value = fmtSum(d); bandUi.bs = bs.value; };
+    bo.onchange = () => { bandUi.bonly = bo.checked; };
+    $('#bb-go').onclick = async () => {
+      const w = bw.value.replace(/\s+/g, ' ').trim(), t = bt.value, sum = +Match.digits(bs.value) || 0;
+      if (!w && !t && !sum) { toast("Yoziladigan qiymat kiritilmagan", 'err'); return; }
+      const what = [w && `ish joyi: «${w}»`, t && `to'lov turi: ${payLabel(t)}`, sum && `oylik: ${fmtSum(sum)} so'm`].filter(Boolean).join(', ');
+      if (!confirm(`${rows.length} ta o'quvchiga ${what} yozilsinmi?${bo.checked ? "\n(Oldin yozilgan qiymatlar o'zgarmaydi.)" : "\n(Oldin yozilganlari ham almashtiriladi!)"}`)) return;
+      let n = 0;
+      for (const { raw } of rows) {
+        const key = studentKey(raw), cur = (state.band || {})[key] || {}, patch = {};
+        if (w && (!bo.checked || !cur.w)) patch.w = w;
+        if (t && (!bo.checked || !cur.t)) patch.t = t;
+        if (sum && (!bo.checked || !cur.s)) patch.s = sum;
+        if (Object.keys(patch).length) { setBand(key, patch); n++; }
+      }
+      await bandChanged();
+      renderBand();
+      toast(`${n} ta o'quvchining bandligi yangilandi ✓`, 'ok');
+    };
+  }
   const more = $('#bd-more');
   if (more) more.onclick = () => { bandUi.limit += 100; renderBand(); };
   const refreshStats = () => { const el = $('#band-stats'); if (el) el.innerHTML = bandStatsHtml(bandStats(rows)); };

@@ -716,3 +716,11 @@ table.resp-tbl td.wrap { white-space: normal; min-width: 180px; font-size: 12.5p
 .a-gpanel-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; }
 .a-gpanel-top button:not(.link) { min-height: 30px; padding: 2px 12px; font-size: 13px; }
 .a-gpanel .chips { max-height: 30vh; overflow: auto; }
+/* Bandlik: hammasiga birdan yozish */
+.band-bar #bd-comp { flex: 1 1 240px; }
+.band-bulk { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; background: var(--surface-2); }
+.band-bulk > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.bb-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.bb-row #bb-w { flex: 2 1 220px; min-width: 0; }
+.bb-row #bb-t { flex: 1 1 150px; min-width: 0; }
+.bb-row #bb-s { flex: 1 1 120px; min-width: 0; text-align: right; }
